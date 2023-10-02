@@ -330,6 +330,8 @@ async def fetch_episode_details(episode_num):
 selected_movie = None
 selected_series = None
 
+
+# Sync commands with discord
 @bot.event
 async def on_ready():
     print(f"Bot is Up and Ready!")
@@ -339,6 +341,7 @@ async def on_ready():
     except Exception as e:
         print(e)
 
+# Bot command to "regrab" (delete and search) for movie
 @bot.tree.command(name="regrab_movie", description="Will delete and redownload selected movie")
 @app_commands.describe(movie="What movie should we regrab?")
 async def regrab_movie(ctx, *, movie: str):
@@ -350,6 +353,7 @@ async def regrab_movie(ctx, *, movie: str):
         global selected_movie
         await ctx.response.send_message("Select a movie to regrab", view=MovieSelectorView(movie_results), ephemeral=True)
 
+# Bot command to "regrab" (delete and search) for TV Show Episode
 @bot.tree.command(name="regrab_episode", description="Will delete and redownload selected episode")
 @app_commands.describe(series="What TV series should we regrab from?")
 async def regrab_episode(ctx, *, series: str):
