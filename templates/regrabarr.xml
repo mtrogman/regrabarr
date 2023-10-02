@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<Container version="2">
+    <Name>regrabarr</Name>
+    <Repository>mtrogman/regrabarr:latest</Repository>
+    <Registry>https://hub.docker.com/r/mtrogman/regrabarr</Registry>
+    <Branch>
+        <Tag>latest</Tag>
+        <TagDescription>Latest stable release</TagDescription>
+    </Branch>
+    <Network>host</Network>
+    <Shell>bash</Shell>
+    <Privileged>false</Privileged>
+    <Support>https://forums.unraid.net/topic/133764-support-grtgbln-docker-templates</Support>
+    <Project>https://github.com/mtrogman/regrabarr</Project>
+    <Overview>(RE)grabarr is a Discord bot that allows end users to regrab (delete and redownload) content.</Overview>
+    <Category>Tools: MediaServer Status:Beta</Category>
+    <TemplateURL>https://raw.githubusercontent.com/mtrogman/unraid_templates/main/templates/regrabarr.xml</TemplateURL>
+    <Maintainer>
+        <WebPage>https://github.com/mtrogman</WebPage>
+    </Maintainer>
+    <Config Name="Config Path" Target="/config" Default="/mnt/user/appdata/regrabarr/config" Mode="rw" Description="Where config file will be stored" Type="Path" Display="advanced" Required="true" Mask="false">/mnt/user/appdata/regrabarr/config</Config>
+</Container>
