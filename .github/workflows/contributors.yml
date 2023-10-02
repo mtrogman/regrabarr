@@ -2,7 +2,7 @@ name: Update contributors
 on:
   push:
     branches:
-      - master
+      - main
 jobs:
   update_contributors:
     name: Add all Contributors to README
