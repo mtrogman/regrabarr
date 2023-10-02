@@ -72,6 +72,18 @@ Thanks goes to these wonderful people ([emoji key](https://allcontributors.org/d
 ### Contributors
 
 <table>
+<tr>
+    <td align="center" style="word-wrap: break-word; width: 75.0; height: 75.0">
+        <a href=https://github.com/mtrogman>
+            <img src=https://avatars.githubusercontent.com/u/47980633?v=4 width="50;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=trog/>
+            <br />
+            <sub style="font-size:14px"><b>trog</b></sub>
+        </a>
+    </td>
+</tr>
+</table>
+
+<table>
 
 </table>
 
