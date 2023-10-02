@@ -1,5 +1,5 @@
 FROM python:3
-WORKDIR /
+WORKDIR /app
 
 # Copy requirements.txt from build machine to WORKDIR (/app) folder 
 COPY requirements.txt requirements.txt
