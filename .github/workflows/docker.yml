@@ -20,7 +20,8 @@ jobs:
     if: contains(github.event.head_commit.message, '[no build]') == false
     strategy:
       matrix:
-        platform: [ linux/amd64, linux/armhf, linux/arm64 ]
+        platform: [ linux/amd64  ]
+        # platform: [ linux/amd64, linux/armhf, linux/arm64 ]
     steps:
       - name: Checkout
         uses: actions/checkout@v3
