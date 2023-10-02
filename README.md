@@ -57,7 +57,7 @@ Feel free to check out my other projects here on [GitHub](https://github.com/mtr
 
 <div align="center">
 	<p>
-		<a href="https://discord.com/channels/783077604101455882/783361448755462155/783361829077778462"><img src="https://discordapp.com/api/guilds/472537215457689601/widget.png?style=banner2" alt="" /></a>
+		<a href="https://discord.gg/jp68q5C3pr"><img src="https://discordapp.com/api/guilds/783077604101455882/widget.png?style=banner2" alt="" /></a>
 	</p>
 </div>
 
