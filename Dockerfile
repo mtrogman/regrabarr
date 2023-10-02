@@ -17,4 +17,4 @@ COPY . .
 RUN echo "**** removing unneeded files ****"
 RUN rm -rf requirements.txt
 
-CMD [ "python", "./regrabbar.py" ]
+CMD [ "python", "regrabbar.py" ]
