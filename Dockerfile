@@ -14,7 +14,7 @@ VOLUME /config
 COPY config.json* /config/
 
 # Copy source code from build machine to WORKDIR (/app) folder
-COPY . .
+COPY *.py /app/
 
 # Delete unnecessary files in WORKDIR (/app) folder (not caught by .dockerignore)
 RUN echo "**** removing unneeded files ****"
