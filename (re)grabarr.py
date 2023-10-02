@@ -47,10 +47,12 @@ class ConfirmButtonsMovie(View):
         await self.interaction.delete_original_response()
 
         async with httpx.AsyncClient() as client:
+            #Delete the movie
             delete_url = f"{radarr_base_url}/movie/{movie_id}?deleteFiles=true&apikey={radarr_api_key}"
             delete_response = await client.delete(delete_url)
             print(f"Deleted {movie_title} with a response of {delete_response}")
 
+            #Add the movie back (and search for it)
             add_url = f"{radarr_base_url}/movie?apikey={radarr_api_key}"
             data = {
                 "tmdbId": movie_tmdb,
@@ -69,8 +71,10 @@ class ConfirmButtonsMovie(View):
             add_response = await client.post(add_url, json=data, headers=headers)
             print(f"Added {movie_title} with a response of {add_response}")
 
+        #Respond to discord 
         await self.interaction.followup.send(content=f"`{self.interaction.user.name} your request to delete and redownload {movie_title}` ({movie_year}) is being processed.")
 
+    #Cancel just responds with msg
     async def cancel_callback(self, button):
         await self.interaction.delete_original_response()
         await self.interaction.followup.send(content="Cancelled the request.", ephemeral=True)
@@ -89,8 +93,10 @@ class ConfirmButtonsSeries(View):
         self.selected_episode_data = selected_episode_data
 
     async def regrab_callback(self, button):
+        #Checks if episodeFileId is 0 and if it is doesnt delete it since its not there.
         if self.selected_episode_data['episodeFileId'] != 0:
             async with httpx.AsyncClient() as client:
+                #Delete's the show
                 delete_url = f"{sonarr_base_url}/episodefile/{self.selected_episode_data['episodeFileId']}?apikey={sonarr_api_key}"
                 print(delete_url)
                 delete_response = await client.delete(delete_url)
@@ -98,6 +104,7 @@ class ConfirmButtonsSeries(View):
         else:
             print(f"No Episode Found")
         
+        #Search for the episode
         async with httpx.AsyncClient() as client:
             search_url = f"{sonarr_base_url}/command/"
             headers = {
@@ -115,10 +122,12 @@ class ConfirmButtonsSeries(View):
         await self.interaction.delete_original_response()
         await self.interaction.followup.send(content=f"`{self.interaction.user.name} your request to (re)grab {self.selected_episode_data['series']}` Season {self.selected_episode_data['season']}) Episode {self.selected_episode_data['episode']} is being processed.")
 
+    #Cancel just responds with msg
     async def cancel_callback(self, button):
         await self.interaction.delete_original_response()
         await self.interaction.followup.send(content="Cancelled the request.", ephemeral=True)
 
+# View & Select required to build out Discord Dropdown.
 class MovieSelectorView(View):
     def __init__(self, search_results):
         super().__init__()
@@ -158,6 +167,7 @@ class MovieSelector(Select):
             content=confirmation_message,
             view=confirmation_view
         )
+# Call to get list of top 10 Movies found that match the search and to put into Discord Dropdown
 async def fetch_movie(movie_name):
     url = f"{radarr_base_url}/movie/lookup?term={movie_name}"
     headers = {"X-Api-Key": radarr_api_key}
@@ -169,7 +179,8 @@ async def fetch_movie(movie_name):
             return movie_list[:10]  # Return the first 10 series
         else:
             return []
-        
+
+# View & Select required to build out TV Series Discord Dropdown.        
 class SeriesSelectorView(View):
     def __init__(self, series_results):
         super().__init__()
@@ -196,6 +207,7 @@ class TVSeriesSelector(Select):
         seriesId = selected_series_data['id']
 
         await interaction.response.edit_message(content="Please select a season", view=SeasonSelectorView(seasons_results))
+# Call to get list of top 10 TV Series found that match the search and to put into Discord Dropdown
 async def fetch_series(series_name):
     url = f"{sonarr_base_url}/series/lookup?term={series_name}"
     headers = {"X-Api-Key": sonarr_api_key}
@@ -208,6 +220,7 @@ async def fetch_series(series_name):
         else:
             return []
 
+# View & Select required to build out TV Season Discord Dropdown.        
 class SeasonSelectorView(View):
     def __init__(self, season_results):
         super().__init__()
@@ -231,6 +244,7 @@ class SeasonSelector(Select):
         global episode_results
         episode_results = await fetch_episodes(selected_season_number)
         await interaction.response.edit_message(content="Please select an episode", view=EpisodeSelectorView(episode_results))
+# Call to get list of seasons within the series and put into Discord Dropdown
 async def fetch_seasons(selected_series_data, ):
     seasons = selected_series_data.get('seasons', [])
     # Filter out season 0 which is extras
@@ -238,6 +252,7 @@ async def fetch_seasons(selected_series_data, ):
 
     return seasons
 
+# View & Select required to build out TV Episode Discord Dropdown.        
 class EpisodeSelectorView(View):
     def __init__(self, episode_results):
         super().__init__()
@@ -275,6 +290,7 @@ class EpisodeSelector(Select):
         # Create and display the ConfirmButtons view for confirmation
         confirmation_view = ConfirmButtonsSeries(interaction, selected_episode_data)
         await interaction.response.edit_message(content=confirmation_message, view=confirmation_view)
+# Call to get list of episodes within the season and put into Discord Dropdown
 async def fetch_episodes(selected_season_number):
     url = f"{sonarr_base_url}/episode"
     parameters = {
@@ -290,6 +306,7 @@ async def fetch_episodes(selected_season_number):
         else:
             print("derp")
             return []
+# Call to get details of the episode selected to populate the confirmation button info
 async def fetch_episode_details(episode_num):
     episode_details = episode_results[episode_num]
     print("Episode Details")
