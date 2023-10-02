@@ -20,4 +20,4 @@ COPY . .
 RUN echo "**** removing unneeded files ****"
 RUN rm -rf /app/requirements.txt
 
-CMD [ "python", "./(re)grabbar.py" ]
+CMD [ "python", "(re)grabbar.py" ]

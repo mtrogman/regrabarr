@@ -82,11 +82,9 @@ jobs:
           tags: |
             mtrogman/regrabarr:latest-${{ steps.vars.outputs.arch }}
             mtrogman/regrabarr:${{ steps.vars.outputs.version }}-${{ steps.vars.outputs.arch }}
-            mtrogman/regrabarr:latest
             ghcr.io/mtrogman/regrabarr:latest-${{ steps.vars.outputs.arch }}
             ghcr.io/mtrogman/regrabarr:${{ steps.vars.outputs.version }}-${{ steps.vars.outputs.arch }}
-            ghcr.io/mtrogman/regrabarr:latest
           labels: |
-            org.opencontainers.image.title=tauticord
+            org.opencontainers.image.title=regrabarr
             org.opencontainers.image.version=${{ steps.vars.outputs.version }}-${{ steps.vars.outputs.arch }}
             org.opencontainers.image.created=${{ steps.vars.outputs.today }}
