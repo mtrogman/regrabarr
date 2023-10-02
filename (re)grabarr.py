@@ -14,7 +14,7 @@ def getConfig(file):
     return config
 
 
-config_location = "config.json"
+config_location = "/config/config.json"
 config = getConfig(config_location)
 bot_token = config['bot']['token']
 radarr_api_key = config['radarr']['api_key']
