@@ -22,4 +22,4 @@ RUN rm -rf /app/requirements.txt
 
 WORKDIR /
 
-CMD [ "python", "/app/regrabbar.py" ]
+CMD [ "python", "app/regrabbar.py" ]
