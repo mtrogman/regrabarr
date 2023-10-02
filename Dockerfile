@@ -1,5 +1,5 @@
 FROM python:3
-WORKDIR /app
+WORKDIR /
 
 # Copy requirements.txt from build machine to WORKDIR (/app) folder 
 COPY requirements.txt requirements.txt
@@ -14,12 +14,10 @@ VOLUME /config
 COPY config.json* /config/
 
 # Copy source code from build machine to WORKDIR (/app) folder
-COPY *.py /app/
+COPY *.py .
 
 # Delete unnecessary files in WORKDIR (/app) folder (not caught by .dockerignore)
 RUN echo "**** removing unneeded files ****"
-RUN rm -rf /app/requirements.txt
+RUN rm -rf requirements.txt
 
-WORKDIR /
-
-CMD [ "python", "app/regrabbar.py" ]
+CMD [ "python", "regrabbar.py" ]
