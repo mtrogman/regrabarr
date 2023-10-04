@@ -299,6 +299,7 @@ class EpisodeSelector(Select):
             f"**Season:** Season {selected_episode_data['season']}\n"
             f"**Episode:** Episode {selected_episode_data['episode']}\n"
             f"**Episode:** Title {selected_episode_data['title']}\n"
+            f"**Air Date:** {selected_episode_data['airDate']}\n" 
             f"**Episode:** Overview {selected_episode_data['overview']}\n"
         )
 

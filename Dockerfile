@@ -9,8 +9,6 @@ RUN apt-get update && \
 
 # Install Python requirements
 RUN pip3 install --no-cache-dir -r requirements.txt
-#RUN pip install --no-cache-dir -r requirements.txt
-
 
 # Make Docker /config volume for optional config file
 VOLUME /config
