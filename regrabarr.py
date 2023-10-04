@@ -336,7 +336,8 @@ async def fetch_episode_details(episode_num):
         "title": episode_details['title'],
         "overview": episode_details['overview'],
         "episodeFileId": episode_details['episodeFileId'],
-        "episodeId": episode_details['id']
+        "episodeId": episode_details['id'],
+        "airDate": episode_details['airDate']
     }
     episode_json = json.dumps(episode_info)
     return episode_json
