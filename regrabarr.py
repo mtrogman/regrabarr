@@ -3,6 +3,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from discord.ui import Select, View, Button
+from datetime import datetime
 import httpx
 
 bot = commands.Bot(command_prefix="!", intents=discord.Intents.all())
@@ -47,12 +48,12 @@ class ConfirmButtonsMovie(View):
         await self.interaction.delete_original_response()
 
         async with httpx.AsyncClient() as client:
-            #Delete the movie
+            # Delete the movie
             delete_url = f"{radarr_base_url}/movie/{movie_id}?deleteFiles=true&apikey={radarr_api_key}"
             delete_response = await client.delete(delete_url)
             print(f"Deleted {movie_title} with a response of {delete_response}")
 
-            #Add the movie back (and search for it)
+            # Add the movie back (and search for it)
             add_url = f"{radarr_base_url}/movie?apikey={radarr_api_key}"
             data = {
                 "tmdbId": movie_tmdb,
@@ -71,10 +72,10 @@ class ConfirmButtonsMovie(View):
             add_response = await client.post(add_url, json=data, headers=headers)
             print(f"Added {movie_title} with a response of {add_response}")
 
-        #Respond to discord 
+        # Respond to discord
         await self.interaction.followup.send(content=f"`{self.interaction.user.name} your request to delete and redownload {movie_title}` ({movie_year}) is being processed.")
 
-    #Cancel just responds with msg
+    # Cancel just responds with msg
     async def cancel_callback(self, button):
         await self.interaction.delete_original_response()
         await self.interaction.followup.send(content="Cancelled the request.", ephemeral=True)
@@ -93,18 +94,18 @@ class ConfirmButtonsSeries(View):
         self.selected_episode_data = selected_episode_data
 
     async def regrab_callback(self, button):
-        #Checks if episodeFileId is 0 and if it is doesnt delete it since its not there.
+        # Checks if episodeFileId is 0 and if it is doesnt delete it since its not there.
         if self.selected_episode_data['episodeFileId'] != 0:
             async with httpx.AsyncClient() as client:
-                #Delete's the show
+                # Delete's the show
                 delete_url = f"{sonarr_base_url}/episodefile/{self.selected_episode_data['episodeFileId']}?apikey={sonarr_api_key}"
                 print(delete_url)
                 delete_response = await client.delete(delete_url)
                 print(f"Deleted EpisodeFileID {self.selected_episode_data['episodeFileId']} with a response of {delete_response}")
         else:
             print(f"No Episode Found")
-        
-        #Search for the episode
+
+        # Search for the episode
         async with httpx.AsyncClient() as client:
             search_url = f"{sonarr_base_url}/command/"
             headers = {
@@ -118,11 +119,11 @@ class ConfirmButtonsSeries(View):
 
             search_response = await client.post(search_url, headers=headers, json=data)
             print(f"Searching for EpisodeID {self.selected_episode_data['episodeId']} with a response of {search_response}")
-     
+
         await self.interaction.delete_original_response()
         await self.interaction.followup.send(content=f"`{self.interaction.user.name} your request to (re)grab {self.selected_episode_data['series']}` Season {self.selected_episode_data['season']}) Episode {self.selected_episode_data['episode']} is being processed.")
 
-    #Cancel just responds with msg
+    # Cancel just responds with msg
     async def cancel_callback(self, button):
         await self.interaction.delete_original_response()
         await self.interaction.followup.send(content="Cancelled the request.", ephemeral=True)
@@ -180,7 +181,7 @@ async def fetch_movie(movie_name):
         else:
             return []
 
-# View & Select required to build out TV Series Discord Dropdown.        
+# View & Select required to build out TV Series Discord Dropdown.
 class SeriesSelectorView(View):
     def __init__(self, series_results):
         super().__init__()
@@ -220,7 +221,7 @@ async def fetch_series(series_name):
         else:
             return []
 
-# View & Select required to build out TV Season Discord Dropdown.        
+# View & Select required to build out TV Season Discord Dropdown.
 class SeasonSelectorView(View):
     def __init__(self, season_results):
         super().__init__()
@@ -234,7 +235,7 @@ class SeasonSelector(Select):
                 label=f"Season {season['seasonNumber']}",
                 value=str(idx)
             )
-            for idx, season in enumerate(seasons_results) 
+            for idx, season in enumerate(seasons_results)
         ]
         super().__init__(placeholder="Please select a season", options=options, min_values=1, max_values=1)
 
@@ -252,7 +253,7 @@ async def fetch_seasons(selected_series_data, ):
 
     return seasons
 
-# View & Select required to build out TV Episode Discord Dropdown.        
+# View & Select required to build out TV Episode Discord Dropdown.
 class EpisodeSelectorView(View):
     def __init__(self, episode_results):
         super().__init__()
@@ -260,15 +261,29 @@ class EpisodeSelectorView(View):
         self.add_item(EpisodeSelector(episode_results))
 class EpisodeSelector(Select):
     def __init__(self, episodes_results):
-        options = [
-            discord.SelectOption(
-                label=f"Episode {episode['episodeNumber']}",
-                value=str(idx)            
-            )
-            for idx, episode in enumerate(episodes_results)
-        ]
-        super().__init__(placeholder="Please select an episode", options=options, min_values=1, max_values=1)
+        options = []
+        current_date = datetime.now().date()
 
+        for idx, episode in enumerate(episodes_results):
+            episode_number = episode['episodeNumber']
+            episode_name = f"Episode {episode_number}"
+            air_date_str = episode.get('airDate', 'Air Date Unknown')
+
+            # Check if the episode has already aired and parse the air date
+            try:
+                air_date = datetime.strptime(air_date_str, "%Y-%m-%d").date()
+                is_past_air_date = air_date <= current_date
+            except ValueError:
+                is_past_air_date = False
+
+            if is_past_air_date:
+                options.append(discord.SelectOption(
+                    label=episode_name,
+                    value=str(idx),
+                    description=air_date_str  # Use "airDate" as the description
+                ))
+
+        super().__init__(placeholder="Please select an episode", options=options, min_values=1, max_values=1)
 
     async def callback(self, interaction: discord.Interaction):
         selected_episode_id = int(self.values[0])
@@ -311,7 +326,7 @@ async def fetch_episode_details(episode_num):
     episode_details = episode_results[episode_num]
     print("Episode Details")
     print(episode_details)
-    
+
     # Create a dictionary to store the parameters
     episode_info = {
         "series": episode_details['title'],
@@ -323,7 +338,7 @@ async def fetch_episode_details(episode_num):
         "episodeId": episode_details['id']
     }
     episode_json = json.dumps(episode_info)
-    return episode_json 
+    return episode_json
 
 
 # Variable to store the selected item
@@ -345,13 +360,13 @@ async def on_ready():
 @bot.tree.command(name="regrab_movie", description="Will delete and redownload selected movie")
 @app_commands.describe(movie="What movie should we regrab?")
 async def regrab_movie(ctx, *, movie: str):
-        movie_results = await fetch_movie(movie)
-        if not movie_results:
-            await ctx.response.send_message(
-                f"{ctx.user.name} no movie matching the following title was found: {movie}")
-            return
-        global selected_movie
-        await ctx.response.send_message("Select a movie to regrab", view=MovieSelectorView(movie_results), ephemeral=True)
+    movie_results = await fetch_movie(movie)
+    if not movie_results:
+        await ctx.response.send_message(
+            f"{ctx.user.name} no movie matching the following title was found: {movie}")
+        return
+    global selected_movie
+    await ctx.response.send_message("Select a movie to regrab", view=MovieSelectorView(movie_results), ephemeral=True)
 
 # Bot command to "regrab" (delete and search) for TV Show Episode
 @bot.tree.command(name="regrab_episode", description="Will delete and redownload selected episode")
