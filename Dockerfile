@@ -1,8 +1,11 @@
-FROM python:3
+FROM python:3.9
 WORKDIR /app
 
 # Copy requirements.txt from build machine to WORKDIR (/app) folder 
 COPY requirements.txt requirements.txt
+
+RUN apt-get update && \
+    apt-get install -y python3-dev libffi-dev libssl-dev
 
 # Install Python requirements
 RUN pip3 install --no-cache-dir -r requirements.txt
