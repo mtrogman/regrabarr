@@ -5,17 +5,17 @@ from discord.ext import commands
 from discord.ui import Select, View, Button
 from datetime import datetime
 import httpx
+import yaml
 
 bot = commands.Bot(command_prefix="!", intents=discord.Intents.all())
 
 
 def getConfig(file):
-    with open(file) as f:
-        config = json.loads(f.read())
+    with open(file, 'r') as yaml_file:
+        config = yaml.safe_load(yaml_file)
     return config
 
-
-config_location = "/config/config.json"
+config_location = "config.yaml"
 config = getConfig(config_location)
 bot_token = config['bot']['token']
 radarr_api_key = config['radarr']['api_key']
