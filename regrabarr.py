@@ -276,11 +276,13 @@ class EpisodeSelector(Select):
             except ValueError:
                 is_past_air_date = False
 
+            # Exclude episodes that haven't aired yet
             if is_past_air_date:
+                formatted_description = f"Air Date: {air_date.strftime('%b %d %Y')}"
                 options.append(discord.SelectOption(
                     label=episode_name,
                     value=str(idx),
-                    description=air_date_str  # Use "airDate" as the description
+                    description=formatted_description
                 ))
 
         super().__init__(placeholder="Please select an episode", options=options, min_values=1, max_values=1)
@@ -325,8 +327,6 @@ async def fetch_episodes(selected_season_number):
 # Call to get details of the episode selected to populate the confirmation button info
 async def fetch_episode_details(episode_num):
     episode_details = episode_results[episode_num]
-    print("Episode Details")
-    print(episode_details)
 
     # Create a dictionary to store the parameters
     episode_info = {
