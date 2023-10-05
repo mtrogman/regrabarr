@@ -201,7 +201,7 @@ class MovieSelector(Select):
             view=confirmation_view
         )
 # Call to get list of top 10 Movies found that match the search and to put into Discord Dropdown
-def fetch_movie(movie_name):
+async def fetch_movie(movie_name):
     url = f"{radarr_base_url}/movie/lookup?term={movie_name}"
     headers = {"X-Api-Key": radarr_api_key}
 
