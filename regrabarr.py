@@ -4,7 +4,7 @@ from discord import app_commands
 from discord.ext import commands
 from discord.ui import Select, View, Button
 from datetime import datetime
-import httpx
+import requests
 import yaml
 import logging
 
@@ -25,6 +25,25 @@ radarr_base_url = config['radarr']['url']
 sonarr_api_key = config['sonarr']['api_key']
 sonarr_base_url = config['sonarr']['url']
 
+
+# Replace async with synchronous requests
+def perform_request(method, url, data=None, headers=None):
+    try:
+        if method == 'GET':
+            response = requests.get(url, headers=headers)
+        elif method == 'POST':
+            response = requests.post(url, json=data, headers=headers)
+        elif method == 'DELETE':
+            response = requests.delete(url, headers=headers)
+        else:
+            raise ValueError(f"Unsupported HTTP method: {method}")
+
+        return response
+
+    except requests.exceptions.RequestException as e:
+        print(f"Error performing {method} request: {e}")
+        logging.error(f"Error performing {method} request: {e}")
+        return None
 
 class ConfirmButtonsMovie(View):
     def __init__(self, interaction, movie_data):
@@ -49,32 +68,31 @@ class ConfirmButtonsMovie(View):
 
         await self.interaction.delete_original_response()
 
-        async with httpx.AsyncClient() as client:
-            # Delete the movie
-            delete_url = f"{radarr_base_url}/movie/{movie_id}?deleteFiles=true&apikey={radarr_api_key}"
-            delete_response = await client.delete(delete_url)
-            print(f"Deleted {movie_title} with a response of {delete_response}")
-            logging.info(f"Deleted {movie_title} with a response of {delete_response}")
+        # Delete the movie
+        delete_url = f"{radarr_base_url}/movie/{movie_id}?deleteFiles=true&apikey={radarr_api_key}"
+        delete_response = perform_request('DELETE', delete_url)
+        print(f"Deleted {movie_title} with a response of {delete_response}")
+        logging.info(f"Deleted {movie_title} with a response of {delete_response}")
 
-            # Add the movie back (and search for it)
-            add_url = f"{radarr_base_url}/movie?apikey={radarr_api_key}"
-            data = {
-                "tmdbId": movie_tmdb,
-                "monitored": True,
-                "qualityProfileId": 1,
-                "minimumAvailability": "released",
-                "addOptions": {
-                    "searchForMovie": True
-                },
-                "rootFolderPath": "/movies",
-                "title": movie_title
-            }
-            headers = {
-                "Content-Type": "application/json"
-            }
-            add_response = await client.post(add_url, json=data, headers=headers)
-            print(f"Added {movie_title} with a response of {add_response}")
-            logging.info(f"Added {movie_title} with a response of {add_response}")
+        # Add the movie back (and search for it)
+        add_url = f"{radarr_base_url}/movie?apikey={radarr_api_key}"
+        data = {
+            "tmdbId": movie_tmdb,
+            "monitored": True,
+            "qualityProfileId": 1,
+            "minimumAvailability": "released",
+            "addOptions": {
+                "searchForMovie": True
+            },
+            "rootFolderPath": "/movies",
+            "title": movie_title
+        }
+        headers = {
+            "Content-Type": "application/json"
+        }
+        add_response = perform_request('POST', add_url, data, headers)
+        print(f"Added {movie_title} with a response of {add_response}")
+        logging.info(f"Added {movie_title} with a response of {add_response}")
 
         # Respond to discord
         await self.interaction.followup.send(content=f"`{self.interaction.user.name} your request to delete and redownload {movie_title}` ({movie_year}) is being processed.")
@@ -98,33 +116,41 @@ class ConfirmButtonsSeries(View):
         self.selected_episode_data = selected_episode_data
 
     async def regrab_callback(self, button):
-        # Checks if episodeFileId is 0 and if it is doesnt delete it since its not there.
+        # Checks if episodeFileId is 0 and if it is doesn't delete it since it's not there.
         if self.selected_episode_data['episodeFileId'] != 0:
-            async with httpx.AsyncClient() as client:
-                # Delete's the show
-                delete_url = f"{sonarr_base_url}/episodefile/{self.selected_episode_data['episodeFileId']}?apikey={sonarr_api_key}"
-                delete_response = await client.delete(delete_url)
-                print(f"Deleted EpisodeFileID {self.selected_episode_data['episodeFileId']} with a response of {delete_response}")
-                logging.info(f"Deleted EpisodeFileID {self.selected_episode_data['episodeFileId']} with a response of {delete_response}")
+            # Delete the show
+            delete_url = f"{sonarr_base_url}/episodefile/{self.selected_episode_data['episodeFileId']}?apikey={sonarr_api_key}"
+            try:
+                delete_response = requests.delete(delete_url)
+                delete_response.raise_for_status()  # Raise an exception for non-200 responses
+                print(f"Deleted EpisodeFileID {self.selected_episode_data['episodeFileId']} with a response of {delete_response.status_code}")
+                logging.info(f"Deleted EpisodeFileID {self.selected_episode_data['episodeFileId']} with a response of {delete_response.status_code}")
+            except requests.exceptions.RequestException as e:
+                print(f"Error deleting EpisodeFileID {self.selected_episode_data['episodeFileId']}: {e}")
+                logging.error(f"Error deleting EpisodeFileID {self.selected_episode_data['episodeFileId']}: {e}")
         else:
             print(f"No Episode Found")
             logging.info(f"No Episode Found")
 
         # Search for the episode
-        async with httpx.AsyncClient() as client:
-            search_url = f"{sonarr_base_url}/command/"
-            headers = {
-                "Content-Type": "application/json",
-                "X-Api-Key": sonarr_api_key
-            }
-            data = {
-                "episodeIds": [self.selected_episode_data['episodeId']],
-                "name": "EpisodeSearch",
-            }
+        search_url = f"{sonarr_base_url}/command/"
+        headers = {
+            "Content-Type": "application/json",
+            "X-Api-Key": sonarr_api_key
+        }
+        data = {
+            "episodeIds": [self.selected_episode_data['episodeId']],
+            "name": "EpisodeSearch",
+        }
 
-            search_response = await client.post(search_url, headers=headers, json=data)
-            print(f"Searching for EpisodeID {self.selected_episode_data['episodeId']} with a response of {search_response}")
-            logging.info(f"Searching for EpisodeID {self.selected_episode_data['episodeId']} with a response of {search_response}")
+        try:
+            search_response = requests.post(search_url, headers=headers, json=data)
+            search_response.raise_for_status()  # Raise an exception for non-200 responses
+            print(f"Searching for EpisodeID {self.selected_episode_data['episodeId']} with a response of {search_response.status_code}")
+            logging.info(f"Searching for EpisodeID {self.selected_episode_data['episodeId']} with a response of {search_response.status_code}")
+        except requests.exceptions.RequestException as e:
+            print(f"Error searching for EpisodeID {self.selected_episode_data['episodeId']}: {e}")
+            logging.error(f"Error searching for EpisodeID {self.selected_episode_data['episodeId']}: {e}")
 
         await self.interaction.delete_original_response()
         await self.interaction.followup.send(content=f"`{self.interaction.user.name} your request to (re)grab {self.selected_episode_data['series']}` Season {self.selected_episode_data['season']}) Episode {self.selected_episode_data['episode']} is being processed.")
@@ -175,17 +201,23 @@ class MovieSelector(Select):
             view=confirmation_view
         )
 # Call to get list of top 10 Movies found that match the search and to put into Discord Dropdown
-async def fetch_movie(movie_name):
+def fetch_movie(movie_name):
     url = f"{radarr_base_url}/movie/lookup?term={movie_name}"
     headers = {"X-Api-Key": radarr_api_key}
 
-    async with httpx.AsyncClient() as client:
-        response = await client.get(url, headers=headers)
+    try:
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()  # Raise an exception for non-200 responses
+
         if response.status_code == 200:
             movie_list = response.json()
-            return movie_list[:10]  # Return the first 10 series
+            return movie_list[:10]  # Return the first 10 movies
         else:
             return []
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching movie data: {e}")
+        logging.error(f"Error fetching movie data: {e}")
+        return []
 
 # View & Select required to build out TV Series Discord Dropdown.
 class SeriesSelectorView(View):
@@ -219,13 +251,19 @@ async def fetch_series(series_name):
     url = f"{sonarr_base_url}/series/lookup?term={series_name}"
     headers = {"X-Api-Key": sonarr_api_key}
 
-    async with httpx.AsyncClient() as client:
-        response = await client.get(url, headers=headers)
+    try:
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()  # Raise an exception for non-200 responses
+
         if response.status_code == 200:
             series_list = response.json()
             return series_list[:10]  # Return the first 10 series
         else:
             return []
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching series data: {e}")
+        logging.error(f"Error fetching series data: {e}")
+        return []
 
 # View & Select required to build out TV Season Discord Dropdown.
 class SeasonSelectorView(View):
@@ -323,14 +361,21 @@ async def fetch_episodes(selected_season_number):
     }
     headers = {"X-Api-Key": sonarr_api_key}
 
-    async with httpx.AsyncClient() as client:
-        response = await client.get(url, headers=headers, params=parameters)
+    try:
+        response = requests.get(url, headers=headers, params=parameters)
+        response.raise_for_status()  # Raise an exception for non-200 responses
+
         if response.status_code == 200:
             return response.json()
         else:
             print(f"Response was not a 200 (was a {response.status_code}) for fetch episode of {seriesId} Season {selected_season_number}")
             logging.warn(f"Response was not a 200 (was a {response.status_code}) for fetch episode of {seriesId} Season {selected_season_number}")
             return []
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching episode data: {e}")
+        logging.error(f"Error fetching episode data: {e}")
+        return []
+
 # Call to get details of the episode selected to populate the confirmation button info
 async def fetch_episode_details(episode_num):
     episode_details = episode_results[episode_num]
