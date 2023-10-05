@@ -6,8 +6,10 @@ from discord.ui import Select, View, Button
 from datetime import datetime
 import httpx
 import yaml
+import logging
 
 bot = commands.Bot(command_prefix="!", intents=discord.Intents.all())
+logging.basicConfig(filename='regrabarr.log', level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
 def getConfig(file):
@@ -52,6 +54,7 @@ class ConfirmButtonsMovie(View):
             delete_url = f"{radarr_base_url}/movie/{movie_id}?deleteFiles=true&apikey={radarr_api_key}"
             delete_response = await client.delete(delete_url)
             print(f"Deleted {movie_title} with a response of {delete_response}")
+            logging.info(f"Deleted {movie_title} with a response of {delete_response}")
 
             # Add the movie back (and search for it)
             add_url = f"{radarr_base_url}/movie?apikey={radarr_api_key}"
@@ -71,6 +74,7 @@ class ConfirmButtonsMovie(View):
             }
             add_response = await client.post(add_url, json=data, headers=headers)
             print(f"Added {movie_title} with a response of {add_response}")
+            logging.info(f"Added {movie_title} with a response of {add_response}")
 
         # Respond to discord
         await self.interaction.followup.send(content=f"`{self.interaction.user.name} your request to delete and redownload {movie_title}` ({movie_year}) is being processed.")
@@ -99,11 +103,12 @@ class ConfirmButtonsSeries(View):
             async with httpx.AsyncClient() as client:
                 # Delete's the show
                 delete_url = f"{sonarr_base_url}/episodefile/{self.selected_episode_data['episodeFileId']}?apikey={sonarr_api_key}"
-                print(delete_url)
                 delete_response = await client.delete(delete_url)
                 print(f"Deleted EpisodeFileID {self.selected_episode_data['episodeFileId']} with a response of {delete_response}")
+                logging.info(f"Deleted EpisodeFileID {self.selected_episode_data['episodeFileId']} with a response of {delete_response}")
         else:
             print(f"No Episode Found")
+            logging.info(f"No Episode Found")
 
         # Search for the episode
         async with httpx.AsyncClient() as client:
@@ -119,6 +124,7 @@ class ConfirmButtonsSeries(View):
 
             search_response = await client.post(search_url, headers=headers, json=data)
             print(f"Searching for EpisodeID {self.selected_episode_data['episodeId']} with a response of {search_response}")
+            logging.info(f"Searching for EpisodeID {self.selected_episode_data['episodeId']} with a response of {search_response}")
 
         await self.interaction.delete_original_response()
         await self.interaction.followup.send(content=f"`{self.interaction.user.name} your request to (re)grab {self.selected_episode_data['series']}` Season {self.selected_episode_data['season']}) Episode {self.selected_episode_data['episode']} is being processed.")
@@ -322,7 +328,8 @@ async def fetch_episodes(selected_season_number):
         if response.status_code == 200:
             return response.json()
         else:
-            print("derp")
+            print(f"Response was not a 200 (was a {response.status_code}) for fetch episode of {seriesId} Season {selected_season_number}")
+            logging.warn(f"Response was not a 200 (was a {response.status_code}) for fetch episode of {seriesId} Season {selected_season_number}")
             return []
 # Call to get details of the episode selected to populate the confirmation button info
 async def fetch_episode_details(episode_num):
@@ -352,11 +359,14 @@ selected_series = None
 @bot.event
 async def on_ready():
     print(f"Bot is Up and Ready!")
+    logging.info('Bot is Up and Ready!')
     try:
         synced = await bot.tree.sync()
         print(f"Synced {len(synced)} command(s)")
+        logging.info(f"Synced {len(synced)} command(s)")
     except Exception as e:
         print(e)
+        logging.error(f"{e}")
 
 # Bot command to "regrab" (delete and search) for movie
 @bot.tree.command(name="regrab_movie", description="Will delete and redownload selected movie")
