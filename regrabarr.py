@@ -9,8 +9,8 @@ import yaml
 import logging
 
 bot = commands.Bot(command_prefix="!", intents=discord.Intents.all())
-logging.init(app_name=APP_NAME, console_log_level=CONSOLE_LOG_LEVEL, log_to_file=True, log_file_dir=args.log,
-             file_log_level=FILE_LOG_LEVEL)
+logging.basicConfig(filename='regrabarr.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
 
 def getConfig(file):
     with open(file, 'r') as yaml_file:
