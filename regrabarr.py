@@ -15,7 +15,7 @@ def getConfig(file):
         config = yaml.safe_load(yaml_file)
     return config
 
-config_location = "config.yaml"
+config_location = "/config/config.yml"
 config = getConfig(config_location)
 bot_token = config['bot']['token']
 radarr_api_key = config['radarr']['api_key']
