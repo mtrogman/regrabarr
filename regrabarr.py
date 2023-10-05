@@ -9,7 +9,7 @@ import yaml
 import logging
 
 bot = commands.Bot(command_prefix="!", intents=discord.Intents.all())
-logging.basicConfig(filename='regrabarr.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(filename='regrabarr.log', level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
 def getConfig(file):
@@ -201,7 +201,7 @@ class MovieSelector(Select):
             view=confirmation_view
         )
 # Call to get list of top 10 Movies found that match the search and to put into Discord Dropdown
-async def fetch_movie(movie_name):
+def fetch_movie(movie_name):
     url = f"{radarr_base_url}/movie/lookup?term={movie_name}"
     headers = {"X-Api-Key": radarr_api_key}
 
