@@ -1,10 +1,11 @@
-import json
+import sys
 import discord
 from discord import app_commands
 from discord.ext import commands
 from discord.ui import Select, View, Button
 from datetime import datetime
 import requests
+import json
 import yaml
 import logging
 
