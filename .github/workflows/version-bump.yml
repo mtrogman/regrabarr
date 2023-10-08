@@ -1,0 +1,29 @@
+name: Version Bump
+
+on:
+  push:
+    branches:
+      - '*'
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v2
+
+    - name: Bump Patch Version
+      run: |
+        # Parse the current version from a version file (e.g., VERSION)
+        current_version=$(cat VERSION)
+        # Bump the patch version (e.g., from 1.2.3 to 1.2.4)
+        new_patch_version=$(echo $current_version | awk -F. '{$3=$3+1; OFS="."; print $0}')
+        # Update the version file with the new patch version
+        echo $new_patch_version > VERSION
+        # Commit the version file
+        git add VERSION
+        git commit -m "Bump patch version to $new_patch_version"
+        git push origin $GITHUB_REF
+      env:
+        GITHUB_REF: ${{ github.ref }}
