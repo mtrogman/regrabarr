@@ -1,12 +1,13 @@
-name: Update Patch Version on commit
+name: Update Minor Version on Merge
 
 on:
-  push:
-    branches:
-      - '*'
+  pull_request:
+    types:
+      - closed
 
 jobs:
-  patch-version-bump:
+  minor-version-bump:
+    if: github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main'
     runs-on: ubuntu-latest
 
     steps:
@@ -21,7 +22,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v2
         
-      - name: Bump Patch Version
+      - name: Bump Minor Version
         id: bump_version
         run: |
           # Parse the current version
@@ -31,9 +32,9 @@ jobs:
           PATCH=$(echo $CURRENT_VERSION | cut -d. -f3)
           
           # Calculate the new version
-          NEW_PATCH=$((PATCH + 1))
-          NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
-          
+          NEW_MINOR=$((MINOR + 1))
+          NEW_VERSION="$MAJOR.$NEW_MINOR.0"
+            
           # Update the version file
           echo "$NEW_VERSION" > VERSION
           echo "Bumped version to $NEW_VERSION"
