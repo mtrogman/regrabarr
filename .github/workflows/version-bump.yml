@@ -1,4 +1,4 @@
-name: Version Bump
+name: Version Bump Workflow
 
 on:
   push:
@@ -6,24 +6,53 @@ on:
       - '*'
 
 jobs:
-  bump:
+  version-bump:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Check out code
-      uses: actions/checkout@v2
-
-    - name: Bump Patch Version
-      run: |
-        # Parse the current version from a version file (e.g., VERSION)
-        current_version=$(cat VERSION)
-        # Bump the patch version (e.g., from 1.2.3 to 1.2.4)
-        new_patch_version=$(echo $current_version | awk -F. '{$3=$3+1; OFS="."; print $0}')
-        # Update the version file with the new patch version
-        echo $new_patch_version > VERSION
-        # Commit the version file
-        git add VERSION
-        git commit -m "Bump patch version to $new_patch_version"
-        git push origin $GITHUB_REF
-      env:
-        GITHUB_REF: ${{ github.ref }}
+      - name: Set Git User Identity
+        run:
+          git config --global user.email "${GITHUB_ACTOR}@users.noreply.github.com"
+          git config --global user.name "$GITHUB_ACTOR"
+        
+      - name: Checkout Repository
+        uses: actions/checkout@v2
+        
+      - name: Parse Current Version
+        id: parse_version
+        run: |
+          echo "::set-output name=current_version::$(cat VERSION)"
+        
+      - name: Bump Patch Version
+        id: bump_version
+        run: |
+          # Parse the current version
+          CURRENT_VERSION=$(echo ${{ steps.parse_version.outputs.current_version }})
+          MAJOR=$(echo $CURRENT_VERSION | cut -d. -f1)
+          MINOR=$(echo $CURRENT_VERSION | cut -d. -f2)
+          PATCH=$(echo $CURRENT_VERSION | cut -d. -f3)
+          
+          # Calculate the new version
+          NEW_PATCH=$((PATCH + 1))
+          NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
+          
+          # Update the version file
+          echo "$NEW_VERSION" > VERSION
+          echo "Bumped version to $NEW_VERSION"
+          
+          # Set the new version as an output
+          echo "::set-output name=new_version::$NEW_VERSION"
+        
+      - name: Commit Version Bump
+        run: |
+          git add VERSION
+          git commit -m "Bump version to ${{ steps.bump_version.outputs.new_version }}"
+          git push
+        
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: VERSION
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
