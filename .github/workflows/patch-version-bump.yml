@@ -1,4 +1,4 @@
-name: Version Bump Workflow
+name: Update Patch Version on commit
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
       - '*'
 
 jobs:
-  version-bump:
+  patch-version-bump:
     runs-on: ubuntu-latest
 
     steps:
@@ -21,16 +21,11 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v2
         
-      - name: Parse Current Version
-        id: parse_version
-        run: |
-          echo "::set-output name=current_version::$(cat VERSION)"
-        
       - name: Bump Patch Version
         id: bump_version
         run: |
           # Parse the current version
-          CURRENT_VERSION=$(echo ${{ steps.parse_version.outputs.current_version }})
+          CURRENT_VERSION=$(cat VERSION)
           MAJOR=$(echo $CURRENT_VERSION | cut -d. -f1)
           MINOR=$(echo $CURRENT_VERSION | cut -d. -f2)
           PATCH=$(echo $CURRENT_VERSION | cut -d. -f3)
@@ -46,7 +41,7 @@ jobs:
           # Set the new version as an output
           echo "::set-output name=new_version::$NEW_VERSION"
         
-      - name: Commit Version Bump
+      - name: Commit and Push Version Bump
         run: |
           git add VERSION
           git commit -m "Bump version to ${{ steps.bump_version.outputs.new_version }}"

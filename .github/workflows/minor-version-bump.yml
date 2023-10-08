@@ -1,0 +1,57 @@
+name: Update Minor Version on Merge
+
+on:
+  pull_request:
+    types:
+      - closed
+
+jobs:
+  minor-version-bump:
+    if: github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set Git User Identity
+        env:
+          GH_EMAIL: ${{ secrets.GH_EMAIL }}
+          GH_USER: ${{ secrets.GH_USER }}
+        run: |
+          git config --global user.email "$GH_EMAIL"
+          git config --global user.name "$GH_USER"
+    
+      - name: Checkout Repository
+        uses: actions/checkout@v2
+        
+      - name: Bump Minor Version
+        id: bump_version
+        run: |
+          # Parse the current version
+          CURRENT_VERSION=$(cat VERSION)
+          MAJOR=$(echo $CURRENT_VERSION | cut -d. -f1)
+          MINOR=$(echo $CURRENT_VERSION | cut -d. -f2)
+          PATCH=$(echo $CURRENT_VERSION | cut -d. -f3)
+          
+          # Calculate the new version
+          NEW_MINOR=$((MINOR + 1))
+          NEW_VERSION="$MAJOR.$NEW_MINOR.0"
+            
+          # Update the version file
+          echo "$NEW_VERSION" > VERSION
+          echo "Bumped version to $NEW_VERSION"
+          
+          # Set the new version as an output
+          echo "::set-output name=new_version::$NEW_VERSION"
+        
+      - name: Commit and Push Version Bump
+        run: |
+          git add VERSION
+          git commit -m "Bump version to ${{ steps.bump_version.outputs.new_version }}"
+          git push
+        
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: VERSION
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
