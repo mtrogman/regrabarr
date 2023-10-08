@@ -41,7 +41,6 @@ def perform_request(method, url, data=None, headers=None):
         return response
 
     except requests.exceptions.RequestException as e:
-        print(f"Error performing {method} request: {e}")
         logging.error(f"Error performing {method} request: {e}")
         return None
 
@@ -71,7 +70,6 @@ class ConfirmButtonsMovie(View):
         # Delete the movie
         delete_url = f"{radarr_base_url}/movie/{movie_id}?deleteFiles=true&apikey={radarr_api_key}"
         delete_response = perform_request('DELETE', delete_url)
-        print(f"Deleted {movie_title} with a response of {delete_response}")
         logging.info(f"Deleted {movie_title} with a response of {delete_response}")
 
         # Add the movie back (and search for it)
@@ -91,7 +89,6 @@ class ConfirmButtonsMovie(View):
             "Content-Type": "application/json"
         }
         add_response = perform_request('POST', add_url, data, headers)
-        print(f"Added {movie_title} with a response of {add_response}")
         logging.info(f"Added {movie_title} with a response of {add_response}")
 
         # Respond to discord
@@ -123,13 +120,10 @@ class ConfirmButtonsSeries(View):
             try:
                 delete_response = requests.delete(delete_url)
                 delete_response.raise_for_status()  # Raise an exception for non-200 responses
-                print(f"Deleted EpisodeFileID {self.selected_episode_data['episodeFileId']} with a response of {delete_response.status_code}")
                 logging.info(f"Deleted EpisodeFileID {self.selected_episode_data['episodeFileId']} with a response of {delete_response.status_code}")
             except requests.exceptions.RequestException as e:
-                print(f"Error deleting EpisodeFileID {self.selected_episode_data['episodeFileId']}: {e}")
                 logging.error(f"Error deleting EpisodeFileID {self.selected_episode_data['episodeFileId']}: {e}")
         else:
-            print(f"No Episode Found")
             logging.info(f"No Episode Found")
 
         # Search for the episode
@@ -146,10 +140,8 @@ class ConfirmButtonsSeries(View):
         try:
             search_response = requests.post(search_url, headers=headers, json=data)
             search_response.raise_for_status()  # Raise an exception for non-200 responses
-            print(f"Searching for EpisodeID {self.selected_episode_data['episodeId']} with a response of {search_response.status_code}")
             logging.info(f"Searching for EpisodeID {self.selected_episode_data['episodeId']} with a response of {search_response.status_code}")
         except requests.exceptions.RequestException as e:
-            print(f"Error searching for EpisodeID {self.selected_episode_data['episodeId']}: {e}")
             logging.error(f"Error searching for EpisodeID {self.selected_episode_data['episodeId']}: {e}")
 
         await self.interaction.delete_original_response()
@@ -215,7 +207,6 @@ async def fetch_movie(movie_name):
         else:
             return []
     except requests.exceptions.RequestException as e:
-        print(f"Error fetching movie data: {e}")
         logging.error(f"Error fetching movie data: {e}")
         return []
 
@@ -261,7 +252,6 @@ async def fetch_series(series_name):
         else:
             return []
     except requests.exceptions.RequestException as e:
-        print(f"Error fetching series data: {e}")
         logging.error(f"Error fetching series data: {e}")
         return []
 
@@ -368,11 +358,9 @@ async def fetch_episodes(selected_season_number):
         if response.status_code == 200:
             return response.json()
         else:
-            print(f"Response was not a 200 (was a {response.status_code}) for fetch episode of {seriesId} Season {selected_season_number}")
             logging.warn(f"Response was not a 200 (was a {response.status_code}) for fetch episode of {seriesId} Season {selected_season_number}")
             return []
     except requests.exceptions.RequestException as e:
-        print(f"Error fetching episode data: {e}")
         logging.error(f"Error fetching episode data: {e}")
         return []
 
@@ -403,14 +391,11 @@ selected_series = None
 # Sync commands with discord
 @bot.event
 async def on_ready():
-    print(f"Bot is Up and Ready!")
     logging.info('Bot is Up and Ready!')
     try:
         synced = await bot.tree.sync()
-        print(f"Synced {len(synced)} command(s)")
         logging.info(f"Synced {len(synced)} command(s)")
     except Exception as e:
-        print(e)
         logging.error(f"{e}")
 
 # Bot command to "regrab" (delete and search) for movie
