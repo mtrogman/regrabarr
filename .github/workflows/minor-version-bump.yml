@@ -1,13 +1,12 @@
-name: Update Minor Version on Merge
+name: Update Minor Version
 
 on:
   pull_request:
     types:
-      - closed
+      - opened
 
 jobs:
   minor-version-bump:
-    if: github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main'
     runs-on: ubuntu-latest
 
     steps:
@@ -22,7 +21,19 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v2
         
+      - name: Check if Minor Version Needs Bump
+        id: check_minor_bump
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          MINOR_BUMP_REQUIRED=$(curl -s -X GET "https://api.github.com/repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" | jq -r 'map(select(.body | contains("@minor-version-bump"))) | length')
+          if [ "$MINOR_BUMP_REQUIRED" -gt 0 ]; then
+            echo "::set-output name=minor_bump_requested::true"
+          else
+            echo "::set-output name=minor_bump_requested::false"
+          fi
+
       - name: Bump Minor Version
+        if: steps.check_minor_bump.outputs.minor_bump_requested == 'true'
         id: bump_version
         run: |
           # Parse the current version
@@ -43,17 +54,20 @@ jobs:
           echo "::set-output name=new_version::$NEW_VERSION"
         
       - name: Commit and Push Version Bump
+        if: steps.check_minor_bump.outputs.minor_bump_requested == 'true'
         run: |
           git add VERSION
           git commit -m "Bump version to ${{ steps.bump_version.outputs.new_version }}"
           git push
         
       - name: Create Git Tag
+        if: steps.check_minor_bump.outputs.minor_bump_requested == 'true'
         run: |
           git tag v${{ steps.bump_version.outputs.new_version }}
           git push origin v${{ steps.bump_version.outputs.new_version }}
   
       - name: Create Release
+        if: steps.check_minor_bump.outputs.minor_bump_requested == 'true'
         id: create_release
         uses: softprops/action-gh-release@v3
         with:
