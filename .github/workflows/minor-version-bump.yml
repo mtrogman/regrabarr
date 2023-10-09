@@ -48,10 +48,17 @@ jobs:
           git commit -m "Bump version to ${{ steps.bump_version.outputs.new_version }}"
           git push
         
+      - name: Create Git Tag
+        run: |
+          git tag v${{ steps.bump_version.outputs.new_version }}
+          git push origin v${{ steps.bump_version.outputs.new_version }}
+  
       - name: Create Release
         id: create_release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v3
         with:
-          files: VERSION
+          tag_name: v${{ steps.bump_version.outputs.new_version }}
+          release_name: ${{ steps.bump_version.outputs.new_version }}
+          draft: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
