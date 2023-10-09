@@ -17,62 +17,61 @@ jobs:
         run: |
           git config --global user.email "$GH_EMAIL"
           git config --global user.name "$GH_USER"
-    
+
       - name: Checkout Repository
         uses: actions/checkout@v2
-        
+
       - name: Check if Minor Version Needs Bump
         id: check_minor_bump
         run: |
           PR_NUMBER="${{ github.event.pull_request.number }}"
-          MINOR_BUMP_REQUIRED=$(curl -s -X GET "https://api.github.com/repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" | jq -r 'map(select(.body | contains("@minor-version-bump"))) | length')
-          if [ "$MINOR_BUMP_REQUIRED" -gt 0 ]; then
-            echo "::set-output name=minor_bump_requested::true"
+          BRANCH_NAME="${{ github.head_ref }}"
+          MINOR_BUMP_FLAG="bump_minor_${BRANCH_NAME}"
+          if [ -z "$(git show-ref --heads "$MINOR_BUMP_FLAG")" ]; then
+            echo "Bump not flagged, bumping minor version..."
+            # Parse the current version
+            CURRENT_VERSION=$(cat VERSION)
+            MAJOR=$(echo $CURRENT_VERSION | cut -d. -f1)
+            MINOR=$(echo $CURRENT_VERSION | cut -d. -f2)
+            PATCH=$(echo $CURRENT_VERSION | cut -d. -f3)
+            
+            # Calculate the new version
+            NEW_MINOR=$((MINOR + 1))
+            NEW_VERSION="$MAJOR.$NEW_MINOR.0"
+            
+            # Update the version file
+            echo "$NEW_VERSION" > VERSION
+            echo "Bumped version to $NEW_VERSION"
+            
+            # Set the new version as an output
+            echo "::set-output name=new_version::$NEW_VERSION"
+
+            # Create a reference flag to indicate that bumping has occurred
+            git update-ref "refs/heads/$MINOR_BUMP_FLAG" HEAD
           else
-            echo "::set-output name=minor_bump_requested::false"
+            echo "Bump already flagged, skipping..."
           fi
 
-      - name: Bump Minor Version
-        if: steps.check_minor_bump.outputs.minor_bump_requested == 'true'
-        id: bump_version
-        run: |
-          # Parse the current version
-          CURRENT_VERSION=$(cat VERSION)
-          MAJOR=$(echo $CURRENT_VERSION | cut -d. -f1)
-          MINOR=$(echo $CURRENT_VERSION | cut -d. -f2)
-          PATCH=$(echo $CURRENT_VERSION | cut -d. -f3)
-          
-          # Calculate the new version
-          NEW_MINOR=$((MINOR + 1))
-          NEW_VERSION="$MAJOR.$NEW_MINOR.0"
-            
-          # Update the version file
-          echo "$NEW_VERSION" > VERSION
-          echo "Bumped version to $NEW_VERSION"
-          
-          # Set the new version as an output
-          echo "::set-output name=new_version::$NEW_VERSION"
-        
       - name: Commit and Push Version Bump
-        if: steps.check_minor_bump.outputs.minor_bump_requested == 'true'
+        if: steps.check_minor_bump.outputs.new_version
         run: |
           git add VERSION
-          git commit -m "Bump version to ${{ steps.bump_version.outputs.new_version }}"
+          git commit -m "Bump version to ${{ steps.check_minor_bump.outputs.new_version }}"
           git push
-        
+
       - name: Create Git Tag
-        if: steps.check_minor_bump.outputs.minor_bump_requested == 'true'
+        if: steps.check_minor_bump.outputs.new_version
         run: |
-          git tag v${{ steps.bump_version.outputs.new_version }}
-          git push origin v${{ steps.bump_version.outputs.new_version }}
-  
+          git tag v${{ steps.check_minor_bump.outputs.new_version }}
+          git push origin v${{ steps.check_minor_bump.outputs.new_version }}
+
       - name: Create Release
-        if: steps.check_minor_bump.outputs.minor_bump_requested == 'true'
+        if: steps.check_minor_bump.outputs.new_version
         id: create_release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: v${{ steps.bump_version.outputs.new_version }}
-          release_name: ${{ steps.bump_version.outputs.new_version }}
+          tag_name: v${{ steps.check_minor_bump.outputs.new_version }}
+          release_name: ${{ steps.check_minor_bump.outputs.new_version }}
           draft: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
