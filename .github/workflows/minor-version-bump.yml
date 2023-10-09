@@ -69,7 +69,7 @@ jobs:
       - name: Create Release
         if: steps.check_minor_bump.outputs.minor_bump_requested == 'true'
         id: create_release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@v1
         with:
           tag_name: v${{ steps.bump_version.outputs.new_version }}
           release_name: ${{ steps.bump_version.outputs.new_version }}
