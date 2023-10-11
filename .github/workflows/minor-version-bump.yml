@@ -50,25 +50,8 @@ jobs:
             # Create a reference flag to indicate that bumping has occurred
             git add VERSION
             git commit -m "Bump version to $NEW_VERSION"
-            git push origin HEAD
+            git push origin ${{ github.event.pull_request.head.ref }}
             git update-ref "refs/heads/$MINOR_BUMP_FLAG" HEAD
           else
             echo "Bump already flagged, skipping..."
           fi
-
-      - name: Create Git Tag
-        if: steps.check_minor_bump.outputs.new_version
-        run: |
-          git tag v${{ steps.check_minor_bump.outputs.new_version }}
-          git push origin v${{ steps.check_minor_bump.outputs.new_version }}
-
-      - name: Create Release
-        if: steps.check_minor_bump.outputs.new_version
-        id: create_release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: v${{ steps.check_minor_bump.outputs.new_version }}
-          release_name: ${{ steps.check_minor_bump.outputs.new_version }}
-          draft: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
