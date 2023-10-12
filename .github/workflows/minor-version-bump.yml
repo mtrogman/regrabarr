@@ -25,7 +25,7 @@ jobs:
         id: check_minor_bump
         run: |
           PR_NUMBER="${{ github.event.pull_request.number }}"
-          BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
+          BRANCH_NAME="refs/heads/${{ github.event.pull_request.head.ref }}"
           MINOR_BUMP_FLAG="bump_minor_${BRANCH_NAME}"
           
           if [ -z "$(git show-ref --heads "$MINOR_BUMP_FLAG")" ]; then
