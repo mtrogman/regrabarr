@@ -43,7 +43,7 @@ jobs:
             tag_name: ${{ steps.get_version.outputs.version }} 
             release_name: Release ${{ steps.get_version.outputs.version }}
             body: |
-              Release $TAG_NAME
+              Release ${{ steps.get_version.outputs.version }}
             draft: false
             prerelease: false
 
@@ -56,7 +56,7 @@ jobs:
             tag_name: ${{ steps.get_version.outputs.version }}
             release_name: Release ${{ steps.get_version.outputs.version }}
             body: |
-                Release $TAG_NAME
+                Release ${{ steps.get_version.outputs.version }}
             draft: false
             prerelease: false
 
