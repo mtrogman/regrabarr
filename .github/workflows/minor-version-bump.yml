@@ -30,7 +30,8 @@ jobs:
 
           # If the flag branch doesn't exist, create it
           if [ -z "$(git show-ref --heads "$MINOR_BUMP_FLAG")" ]; then
-            git checkout -b "$BRANCH_NAME"
+            git checkout -b refs/heads/$BRANCH_NAME
+            git pull
           fi
 
           # Bump the minor version
