@@ -50,7 +50,7 @@ jobs:
 
           # Commit and push the changes
           git commit -am "Bump version to $NEW_VERSION"
-          git push
+          git push --set-upstream origin $BRANCH_NAME
           
           # Set the new version as an output
           echo "::set-output name=new_version::$NEW_VERSION"
