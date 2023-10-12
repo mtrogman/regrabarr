@@ -25,7 +25,8 @@ jobs:
         id: check_minor_bump
         run: |
           PR_NUMBER="${{ github.event.pull_request.number }}"
-          MINOR_BUMP_FLAG="bump_minor_${{ github.event.pull_request.head.ref }}"
+          BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
+          MINOR_BUMP_FLAG="bump_minor_${BRANCH_NAME}"
           
           if [ -z "$(git show-ref --heads "$MINOR_BUMP_FLAG")" ]; then
             echo "Bump not flagged, bumping minor version..."
@@ -46,11 +47,14 @@ jobs:
             # Set the new version as an output
             echo "::set-output name=new_version::$NEW_VERSION"
 
-            # Create a reference flag to indicate that bumping has occurred
+            # Commit and push to the branch
             git add VERSION
             git commit -m "Bump version to $NEW_VERSION"
-            git push origin HEAD
-            git update-ref "refs/heads/$MINOR_BUMP_FLAG" HEAD
+            git push origin "$BRANCH_NAME"
+            
+            # Create a reference flag to indicate that bumping has occurred
+            git branch -M "$BRANCH_NAME"
+            git push origin --delete "$MINOR_BUMP_FLAG"
           else
             echo "Bump already flagged, skipping..."
           fi
