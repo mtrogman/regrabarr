@@ -27,7 +27,7 @@ jobs:
           PR_NUMBER="${{ github.event.pull_request.number }}"
           BRANCH_NAME="refs/heads/${{ github.event.pull_request.head.ref }}"
           MINOR_BUMP_FLAG="bump_minor_${BRANCH_NAME}"
-          echo "Branch Name is"
+          echo "###################Branch Name is####################"
           echo $BRANCH_NAME
           
           if [ -z "$(git show-ref --heads "$MINOR_BUMP_FLAG")" ]; then
