@@ -30,7 +30,7 @@ jobs:
 
           if [ -z "$(git show-ref --heads "$MINOR_BUMP_FLAG")" ]; then
             git checkout -b $BRANCH_NAME
-            git push --set-upstream origin $BRANCH_NAME
+            git pull origin $BRANCH_NAME
 
 
             # Bump the minor version
