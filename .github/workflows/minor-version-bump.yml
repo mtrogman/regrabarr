@@ -19,7 +19,7 @@ jobs:
           git config --global user.name "$GH_USER"
 
       - name: Checkout Repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Check if Minor Version Needs Bump
         id: check_minor_bump
@@ -49,9 +49,8 @@ jobs:
           echo "Bumped version to $NEW_VERSION"
 
           # Commit and push the changes
-          git add VERSION
-          git commit -m "Bump version to $NEW_VERSION"
-          git push origin "$BRANCH_NAME"
+          git commit -am "Bump version to $NEW_VERSION"
+          git push
           
           # Set the new version as an output
           echo "::set-output name=new_version::$NEW_VERSION"
