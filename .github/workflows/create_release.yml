@@ -40,30 +40,30 @@ jobs:
         env:
             GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-            tag_name: ${{ steps.get_version.outputs.version }} 
-            release_name: Release ${{ steps.get_version.outputs.version }}
+            tag_name: ${{ github.ref }}
+            release_name: Release ${{ github.ref }}
             body: |
               Release ${{ steps.get_version.outputs.version }}
             draft: false
             prerelease: false
 
-    #   - name: Trigger Build and Publish
-    #     id: trigger_build_and_publish
-    #     uses: actions/create-release@latest
-    #     env:
-    #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    #     with:
-    #         tag_name: ${{ steps.get_version.outputs.version }}
-    #         release_name: Release ${{ steps.get_version.outputs.version }}
-    #         body: |
-    #             Release ${{ steps.get_version.outputs.version }}
-    #         draft: false
-    #         prerelease: false
+      - name: Trigger Build and Publish
+        id: trigger_build_and_publish
+        uses: actions/create-release@latest
+        env:
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+            tag_name: ${{ github.ref }}
+            release_name: Release ${{ github.ref }}
+            body: |
+                Release ${{ github.ref }}
+            draft: false
+            prerelease: false
 
-    #   - name: Trigger Docker Workflow
-    #     if: success()  # You can adjust this condition based on your needs
-    #     run: |
-    #         curl -XPOST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-    #             -H "Accept: application/vnd.github.everest-preview+json" \
-    #             https://api.github.com/repos/${{ github.repository }}/dispatches \
-    #             --data '{"event_type": "trigger-docker-workflow"}'
+      - name: Trigger Docker Workflow
+        if: success()  # You can adjust this condition based on your needs
+        run: |
+            curl -XPOST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+                -H "Accept: application/vnd.github.everest-preview+json" \
+                https://api.github.com/repos/${{ github.repository }}/dispatches \
+                --data '{"event_type": "trigger-docker-workflow"}'
