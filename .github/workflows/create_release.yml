@@ -47,19 +47,6 @@ jobs:
             draft: false
             prerelease: false
 
-      - name: Trigger Build and Publish
-        id: trigger_build_and_publish
-        uses: actions/create-release@latest
-        env:
-            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-            tag_name: ${{ github.ref }}
-            release_name: Release ${{ github.ref }}
-            body: |
-                Release ${{ github.ref }}
-            draft: false
-            prerelease: false
-
       - name: Trigger Docker Workflow
         if: success()  # You can adjust this condition based on your needs
         run: |
