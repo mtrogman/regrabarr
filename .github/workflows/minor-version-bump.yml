@@ -28,30 +28,32 @@ jobs:
           BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
           MINOR_BUMP_FLAG="bump_minor_${BRANCH_NAME}"
 
-          # If the flag branch doesn't exist, create it
           if [ -z "$(git show-ref --heads "$MINOR_BUMP_FLAG")" ]; then
-            git checkout -b refs/heads/$BRANCH_NAME
-            git pull
+            git checkout -b $BRANCH_NAME
+            git push --set-upstream origin $BRANCH_NAME
+
+
+            # Bump the minor version
+            # Parse the current version
+            CURRENT_VERSION=$(cat VERSION)
+            MAJOR=$(echo $CURRENT_VERSION | cut -d. -f1)
+            MINOR=$(echo $CURRENT_VERSION | cut -d. -f2)
+            PATCH=$(echo $CURRENT_VERSION | cut -d. -f3)
+
+            # Calculate the new version
+            NEW_MINOR=$((MINOR + 1))
+            NEW_VERSION="$MAJOR.$NEW_MINOR.0"
+
+            # Update the version file
+            echo "$NEW_VERSION" > VERSION
+            echo "Bumped version to $NEW_VERSION"
+
+            # Commit and push the changes
+            git commit -am "Bump version to $NEW_VERSION"
+            git push origin $BRANCH_NAME
+            
+            # Set the new version as an output
+            echo "::set-output name=new_version::$NEW_VERSION"
+          else
+            echo "We already bumped minor for this branch"
           fi
-
-          # Bump the minor version
-          # Parse the current version
-          CURRENT_VERSION=$(cat VERSION)
-          MAJOR=$(echo $CURRENT_VERSION | cut -d. -f1)
-          MINOR=$(echo $CURRENT_VERSION | cut -d. -f2)
-          PATCH=$(echo $CURRENT_VERSION | cut -d. -f3)
-
-          # Calculate the new version
-          NEW_MINOR=$((MINOR + 1))
-          NEW_VERSION="$MAJOR.$NEW_MINOR.0"
-
-          # Update the version file
-          echo "$NEW_VERSION" > VERSION
-          echo "Bumped version to $NEW_VERSION"
-
-          # Commit and push the changes
-          git commit -am "Bump version to $NEW_VERSION"
-          git push --set-upstream origin $BRANCH_NAME
-          
-          # Set the new version as an output
-          echo "::set-output name=new_version::$NEW_VERSION"
