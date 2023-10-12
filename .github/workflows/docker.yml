@@ -3,7 +3,7 @@ name: Build & Publish Docker image
 on:
   release:
     types:
-      - created
+      - trigger-docker-workflow
     secrets:
       - DOCKER_USERNAME
       - DOCKER_TOKEN
