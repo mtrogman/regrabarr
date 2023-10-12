@@ -21,7 +21,7 @@ jobs:
       - name: Establish variables
         id: vars
         run: |
-          VERSION=${{ github.event.inputs.version || github.ref_name }}
+          VERSION=$(cat VERSION)
           echo ::set-output name=version::${VERSION}
           echo ::set-output name=today::$(date +'%Y-%m-%d')
           echo ::set-output name=year::$(date +'%Y')
