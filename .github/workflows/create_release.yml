@@ -1,0 +1,39 @@
+name: Create Release
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Get Version from VERSION File
+        id: get_version
+        run: |
+          VERSION=$(cat VERSION)
+          echo "::set-output name=version::$VERSION"
+        
+      - name: Create Git Tag
+        run: |
+          TAG_NAME="${{ steps.get_version.outputs.version }}"
+          git tag -a $TAG_NAME -m "Release $TAG_NAME"
+          git push origin $TAG_NAME
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@latest
+        env:
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # This token is provided by Actions, you do not need to create your own token
+        with:
+            tag_name: ${{ github.ref }}
+            release_name: Release ${{ github.ref }}
+            body: |
+              Release $TAG_NAME
+            draft: false
+            prerelease: false
