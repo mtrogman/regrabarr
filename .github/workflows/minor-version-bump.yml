@@ -54,7 +54,7 @@ jobs:
             git pull --no-rebase origin "$BRANCH_NAME"
             git add VERSION
             git commit -m "Bump version to $NEW_VERSION"
-            git push origin HEAD:"$BRANCH_NAME"
+            git push --force origin HEAD:"$BRANCH_NAME"
             
             # Create a reference flag to indicate that bumping has occurred
             git branch -M "$BRANCH_NAME"
