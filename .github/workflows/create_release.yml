@@ -10,6 +10,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Set Git User Identity
+        env:
+          GH_EMAIL: ${{ secrets.GH_EMAIL }}
+          GH_USER: ${{ secrets.GH_USER }}
+        run: |
+          git config --global user.email "$GH_EMAIL"
+          git config --global user.name "$GH_USER"
+        
       - name: Checkout Repository
         uses: actions/checkout@v3
 
