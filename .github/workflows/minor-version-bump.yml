@@ -27,38 +27,31 @@ jobs:
           PR_NUMBER="${{ github.event.pull_request.number }}"
           BRANCH_NAME="refs/heads/${{ github.event.pull_request.head.ref }}"
           MINOR_BUMP_FLAG="bump_minor_${BRANCH_NAME}"
-          echo "###################Branch Name is####################"
-          echo $BRANCH_NAME
-          
-          if [ -z "$(git show-ref --heads "$MINOR_BUMP_FLAG")" ]; then
-            echo "Bump not flagged, bumping minor version..."
-            # Parse the current version
-            CURRENT_VERSION=$(cat VERSION)
-            MAJOR=$(echo $CURRENT_VERSION | cut -d. -f1)
-            MINOR=$(echo $CURRENT_VERSION | cut -d. -f2)
-            PATCH=$(echo $CURRENT_VERSION | cut -d. -f3)
-            
-            # Calculate the new version
-            NEW_MINOR=$((MINOR + 1))
-            NEW_VERSION="$MAJOR.$NEW_MINOR.0"
-            
-            # Update the version file
-            echo "$NEW_VERSION" > VERSION
-            echo "Bumped version to $NEW_VERSION"
-            
-            # Set the new version as an output
-            echo "::set-output name=new_version::$NEW_VERSION"
 
-            # Commit and push to the branch
+          # If the flag branch doesn't exist, create it
+          if [ -z "$(git show-ref --heads "$MINOR_BUMP_FLAG")" ]; then
             git checkout -b "$BRANCH_NAME"
-            git pull --no-rebase origin "$BRANCH_NAME"
-            git add VERSION
-            git commit -m "Bump version to $NEW_VERSION"
-            git push --force origin HEAD:"$BRANCH_NAME"
-            
-            # Create a reference flag to indicate that bumping has occurred
-            git branch -M "$BRANCH_NAME"
-            git push origin --delete "$MINOR_BUMP_FLAG"
-          else
-            echo "Bump already flagged, skipping..."
           fi
+
+          # Bump the minor version
+          # Parse the current version
+          CURRENT_VERSION=$(cat VERSION)
+          MAJOR=$(echo $CURRENT_VERSION | cut -d. -f1)
+          MINOR=$(echo $CURRENT_VERSION | cut -d. -f2)
+          PATCH=$(echo $CURRENT_VERSION | cut -d. -f3)
+
+          # Calculate the new version
+          NEW_MINOR=$((MINOR + 1))
+          NEW_VERSION="$MAJOR.$NEW_MINOR.0"
+
+          # Update the version file
+          echo "$NEW_VERSION" > VERSION
+          echo "Bumped version to $NEW_VERSION"
+
+          # Commit and push the changes
+          git add VERSION
+          git commit -m "Bump version to $NEW_VERSION"
+          git push origin "$BRANCH_NAME"
+          
+          # Set the new version as an output
+          echo "::set-output name=new_version::$NEW_VERSION"
