@@ -277,7 +277,7 @@ class SeasonSelector(Select):
         selected_season_index = int(self.values[0])
         selected_season_number = self.seasons_results[selected_season_index]['seasonNumber']
         global episode_results
-        episode_results = await fetch_episodes(seriesId, selected_season_number)
+        episode_results = await fetch_episodes(selected_season_number, seriesId)
         await interaction.response.edit_message(content="Please select an episode", view=EpisodeSelectorView(episode_results))
 # Call to get list of seasons within the series and put into Discord Dropdown
 async def fetch_seasons(selected_series_data, ):
@@ -343,7 +343,7 @@ class EpisodeSelector(Select):
         confirmation_view = ConfirmButtonsSeries(interaction, selected_episode_data)
         await interaction.response.edit_message(content=confirmation_message, view=confirmation_view)
 # Call to get list of episodes within the season and put into Discord Dropdown
-async def fetch_episodes(seriesId, selected_season_number):
+async def fetch_episodes(selected_season_number, seriesId):
     url = f"{sonarr_base_url}/episode"
     parameters = {
         'seriesId': seriesId,
@@ -407,7 +407,6 @@ async def regrab_movie(ctx, *, movie: str):
         await ctx.response.send_message(
             f"{ctx.user.name} no movie matching the following title was found: {movie}")
         return
-    global selected_movie
     await ctx.response.send_message("Select a movie to regrab", view=MovieSelectorView(movie_results), ephemeral=True)
 
 # Bot command to "regrab" (delete and search) for TV Show Episode
@@ -419,7 +418,6 @@ async def regrab_episode(ctx, *, series: str):
     if not series_results:
         await ctx.response.send_message(f"No TV series matching the title: {series}")
         return
-    global selected_series
     await ctx.response.send_message("Select a TV series to regrab", view=SeriesSelectorView(series_results), ephemeral=True)
 
 bot.run(bot_token)
