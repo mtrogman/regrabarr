@@ -407,7 +407,6 @@ async def regrab_movie(ctx, *, movie: str):
         await ctx.response.send_message(
             f"{ctx.user.name} no movie matching the following title was found: {movie}")
         return
-    global selected_movie
     await ctx.response.send_message("Select a movie to regrab", view=MovieSelectorView(movie_results), ephemeral=True)
 
 # Bot command to "regrab" (delete and search) for TV Show Episode
@@ -419,7 +418,6 @@ async def regrab_episode(ctx, *, series: str):
     if not series_results:
         await ctx.response.send_message(f"No TV series matching the title: {series}")
         return
-    global selected_series
     await ctx.response.send_message("Select a TV series to regrab", view=SeriesSelectorView(series_results), ephemeral=True)
 
 bot.run(bot_token)
