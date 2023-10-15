@@ -154,13 +154,14 @@ class ConfirmButtonsSeries(View):
 
 # View & Select required to build out Discord Dropdown.
 class MovieSelectorView(View):
-    def __init__(self, search_results):
+    def __init__(self, search_results, media_info):
         super().__init__()
         self.search_results = search_results
-        self.add_item(MovieSelector(search_results))
+        self.add_item(MovieSelector(search_results, media_info))
 class MovieSelector(Select):
-    def __init__(self, search_results):
+    def __init__(self, search_results, media_info):
         self.search_results = search_results
+        self.media_info = media_info
         options = [
             discord.SelectOption(
                 label=movie['title'],
@@ -175,15 +176,15 @@ class MovieSelector(Select):
         selected_movie_index = int(self.values[0])
         selected_movie_data = self.search_results[selected_movie_index]
 
-        movie_title = selected_movie_data['title']
-        movie_year = selected_movie_data['year']
-        movie_overview = selected_movie_data['overview']
+        self.media_info['title'] = selected_movie_data['title']
+        self.media_info['year'] = selected_movie_data['year']
+        self.media_info['overview'] = selected_movie_data['overview']
 
         confirmation_message = (
             f"Please confirm that you would like to regrab the following movie:\n"
-            f"**Title:** {movie_title}\n"
-            f"**Year:** {movie_year}\n"
-            f"**Overview:** {movie_overview}\n"
+            f"**Title:** {self.media_info['title']}\n"
+            f"**Year:** {self.media_info['year']}\n"
+            f"**Overview:** {self.media_info['overview']}\n"
         )
 
         confirmation_view = ConfirmButtonsMovie(interaction, selected_movie_data)
@@ -192,6 +193,7 @@ class MovieSelector(Select):
             content=confirmation_message,
             view=confirmation_view
         )
+
 # Call to get list of top 10 Movies found that match the search and to put into Discord Dropdown
 async def fetch_movie(movie_name):
     url = f"{radarr_base_url}/movie/lookup?term={movie_name}"
@@ -382,11 +384,7 @@ async def fetch_episode_details(episode_num):
     episode_json = json.dumps(episode_info)
     return episode_json
 
-
-# Variable to store the selected item
-selected_movie = None
-selected_series = None
-
+media_info = {}
 
 # Sync commands with discord
 @bot.event
@@ -407,7 +405,9 @@ async def regrab_movie(ctx, *, movie: str):
         await ctx.response.send_message(
             f"{ctx.user.name} no movie matching the following title was found: {movie}")
         return
-    await ctx.response.send_message("Select a movie to regrab", view=MovieSelectorView(movie_results), ephemeral=True)
+    media_info['what'] = 'movie'
+    media_info['delete'] = 'yes'
+    await ctx.response.send_message("Select a movie to regrab", view=MovieSelectorView(movie_results, media_info), ephemeral=True)
 
 # Bot command to "regrab" (delete and search) for TV Show Episode
 @bot.tree.command(name="regrab_episode", description="Will delete and redownload selected episode")
@@ -418,6 +418,8 @@ async def regrab_episode(ctx, *, series: str):
     if not series_results:
         await ctx.response.send_message(f"No TV series matching the title: {series}")
         return
+    media_info['what'] = 'series'
+    media_info['delete'] = 'yes'
     await ctx.response.send_message("Select a TV series to regrab", view=SeriesSelectorView(series_results), ephemeral=True)
 
 bot.run(bot_token)
