@@ -65,7 +65,7 @@ class ConfirmButtonsMovie(View):
         # Use self.media_info to access movie details
         movie_title = self.media_info['title']
         movie_year = self.media_info['year']
-        movie_id = self.media_info['movieId']
+        movie_id = self.media_info['id']
         movie_tmdb = self.media_info['tmdbId']
 
         await self.interaction.delete_original_response()
@@ -182,12 +182,10 @@ class MovieSelector(Select):
     async def callback(self, interaction: discord.Interaction):
         selected_movie_index = int(self.values[0])
         selected_movie_data = self.search_results[selected_movie_index]
-
         self.media_info['movieId'] = selected_movie_data['id']
         self.media_info['title'] = selected_movie_data['title']
         self.media_info['year'] = selected_movie_data['year']
         self.media_info['overview'] = selected_movie_data['overview']
-
         confirmation_message = (
             f"Please confirm that you would like to regrab the following movie:\n"
             f"**Title:** {self.media_info['title']}\n"
@@ -352,7 +350,7 @@ class EpisodeSelector(Select):
         super().__init__(placeholder="Please select an episode", options=options, min_values=1, max_values=1)
 
     async def callback(self, interaction: discord.Interaction):
-        self.media_info['episodeNumber'] = int(self.values[0])
+        self.media_info['episodeArrayNumber'] = int(self.values[0])
         await fetch_episode_details(self.episode_results, self.media_info)
 
         # Construct the confirmation message with episode details
@@ -395,8 +393,9 @@ async def fetch_episodes(media_info):
 
 # Call to get details of the episode selected to populate the confirmation button info
 async def fetch_episode_details(episode_results, media_info):
-    episode_details = episode_results[media_info['episodeNumber']]
+    episode_details = episode_results[media_info['episodeArrayNumber']]
     media_info['title'] = episode_details['title']
+    media_info['episodeNumber'] = episode_details['episodeNumber']
     media_info['overview'] = episode_details['overview']
     media_info['episodeFileId'] = episode_details['episodeFileId']
     media_info['episodeId'] = episode_details['id']
