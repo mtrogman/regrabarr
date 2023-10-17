@@ -48,7 +48,7 @@ def perform_request(method, url, data=None, headers=None):
 
 
 class ConfirmButtonsMovie(View):
-    def __init__(self, interaction, movie_data):
+    def __init__(self, interaction, media_info):
         super().__init__()
         regrab_button = Button(style=discord.ButtonStyle.primary, label="Regrab")
         regrab_button.callback = self.regrab_callback
@@ -59,14 +59,14 @@ class ConfirmButtonsMovie(View):
         self.add_item(cancel_button)
 
         self.interaction = interaction
-        self.movie_data = movie_data
+        self.media_info = media_info
 
     async def regrab_callback(self, button):
-        # Use self.movie_data to access movie details
-        movie_title = self.movie_data['title']
-        movie_year = self.movie_data['year']
-        movie_id = self.movie_data['id']
-        movie_tmdb = self.movie_data['tmdbId']
+        # Use self.media_info to access movie details
+        movie_title = self.media_info['title']
+        movie_year = self.media_info['year']
+        movie_id = self.media_info['movieId']
+        movie_tmdb = self.media_info['tmdbId']
 
         await self.interaction.delete_original_response()
 
@@ -183,6 +183,7 @@ class MovieSelector(Select):
         selected_movie_index = int(self.values[0])
         selected_movie_data = self.search_results[selected_movie_index]
 
+        self.media_info['movieId'] = selected_movie_data['id']
         self.media_info['title'] = selected_movie_data['title']
         self.media_info['year'] = selected_movie_data['year']
         self.media_info['overview'] = selected_movie_data['overview']
@@ -394,7 +395,6 @@ async def fetch_episodes(media_info):
 
 # Call to get details of the episode selected to populate the confirmation button info
 async def fetch_episode_details(episode_results, media_info):
-    print(episode_results)
     episode_details = episode_results[media_info['episodeNumber']]
     media_info['title'] = episode_details['title']
     media_info['overview'] = episode_details['overview']
