@@ -145,12 +145,12 @@ class ConfirmButtonsSeries(View):
         try:
             search_response = requests.post(search_url, headers=headers, json=data)
             search_response.raise_for_status()  # Raise an exception for non-200 responses
-            logging.info(f"Searching for EpisodeID {media_info['episodeId']} with a response of {search_response.status_code}")
+            logging.info(f"Searching for EpisodeID {media_info['episodeNumber']} with a response of {search_response.status_code}")
         except requests.exceptions.RequestException as e:
             logging.error(f"Error searching for EpisodeID {media_info['episodeId']}: {e}")
 
         await self.interaction.delete_original_response()
-        await self.interaction.followup.send(content=f"`{self.interaction.user.name} your request to (re)grab {media_info['series']}` Season {media_info['season']}) Episode {media_info['episode']} is being processed.")
+        await self.interaction.followup.send(content=f"`{self.interaction.user.name} your request to (re)grab {media_info['series']}` Season {media_info['seasonNumber']}) Episode {media_info['episodeNumber']} is being processed.")
 
     # Cancel just responds with msg
     async def cancel_callback(self, button):
@@ -394,11 +394,12 @@ async def fetch_episodes(media_info):
 
 # Call to get details of the episode selected to populate the confirmation button info
 async def fetch_episode_details(episode_results, media_info):
+    print(episode_results)
     episode_details = episode_results[media_info['episodeNumber']]
-    media_info['title'] = episode_details['title'],
-    media_info['overview'] = episode_details['overview'],
-    media_info['episodeFileId'] = episode_details['episodeFileId'],
-    media_info['id'] = episode_details['id'],
+    media_info['title'] = episode_details['title']
+    media_info['overview'] = episode_details['overview']
+    media_info['episodeFileId'] = episode_details['episodeFileId']
+    media_info['episodeId'] = episode_details['id']
     media_info['airDate'] = episode_details['airDate']
 
 
