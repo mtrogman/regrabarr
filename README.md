@@ -7,7 +7,6 @@ Regrabbing content will have the bot delete the original file and start a new se
 
 ## Requirements
 
-- A Plex Media Server
 - Sonarr
 - Radarr
 - A Discord server
@@ -23,7 +22,7 @@ Regrabbing content will have the bot delete the original file and start a new se
         - Manage Emojis
 
 
-Regrabarr runs as a Docker container. The Dockerfile is included in this repository, or can be pulled
+Regrabarr runs as a Docker container. The Dockerfile is included in this repository or can be pulled
 from [Docker Hub](https://hub.docker.com/r/mtrogman/regrabarr)
 or [GitHub Packages](https://github.com/mtrogman/regrabarr/pkgs/container/regrabarr).
 
@@ -41,8 +40,8 @@ You can also set these variables via a configuration file:
 
 1. Map the `/config` directory (see volumes above)
 2. Enter the mapped directory on your host machine
-3. Rename the ``config.json.example`` file in the path to ``config.json``
-4. Complete the variables in ``config.json``
+3. Rename the ``config.yml.example`` file in the path to ``config.yml``
+4. Complete the variables in ``config.yml``
 
 # Development
 
