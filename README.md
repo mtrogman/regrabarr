@@ -1,3 +1,19 @@
+<div align="center">
+
+# (RE)grabarr
+
+A Discord bot to delete and (re)search for media
+
+[![Release](https://img.shields.io/github/v/release/mtrogman/regrabarr?color=yellow&include_prereleases&label=version&style=flat-square)](https://github.com/mtrogman/regrabarr/releases)
+[![Docker](https://img.shields.io/docker/pulls/mtrogman/regrabarr?style=flat-square)](https://hub.docker.com/r/mtrogman/regrabarr)
+[![Licence](https://img.shields.io/github/license/mtrogman/regrabarr?style=flat-square)](https://opensource.org/licenses/GPL-3.0)
+
+
+<img src="https://raw.githubusercontent.com/mtrogman/regrabarr/master/logo.png" alt="logo">
+
+</div>
+
+
 # Features
 
 (RE)grabbar uses discord and Sonarr/Radarr to allow discord users to 'regrab' content.  
