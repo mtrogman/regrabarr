@@ -95,8 +95,11 @@ class ConfirmButtonsMovie(View):
         logging.info(f"Added {movie_title} with a response of {add_response}")
 
         # Respond to discord
-        await self.interaction.followup.send(content=f"`{self.interaction.user.name} your request to delete and redownload {movie_title}` ({movie_year}) is being processed.")
-
+        if 200 <= add_response.status_code < 400:
+            await self.interaction.followup.send(content=f"`{self.interaction.user.name} your request to delete and redownload {movie_title}` ({movie_year}) is being processed.")
+        else:
+            await self.interaction.followup.send(content=f"`{self.interaction.user.name}` your request of {movie_title} ({movie_year}) had an issue, please contact the admin")
+    
     # Cancel just responds with msg
     async def cancel_callback(self, button):
         await self.interaction.delete_original_response()
@@ -118,6 +121,9 @@ class ConfirmButtonsSeries(View):
         self.media_info = media_info
 
     async def regrab_callback(self, button):
+
+        await self.interaction.delete_original_response()
+
         # Checks if episodeFileId is 0 and if it is doesn't delete it since it's not there.
         if media_info['episodeFileId'] != 0:
             # Delete the show
@@ -148,9 +154,11 @@ class ConfirmButtonsSeries(View):
             logging.info(f"Searching for EpisodeID {media_info['episodeNumber']} with a response of {search_response.status_code}")
         except requests.exceptions.RequestException as e:
             logging.error(f"Error searching for EpisodeID {media_info['episodeId']}: {e}")
-
-        await self.interaction.delete_original_response()
-        await self.interaction.followup.send(content=f"`{self.interaction.user.name} your request to (re)grab {media_info['series']}` Season {media_info['seasonNumber']}) Episode {media_info['episodeNumber']} is being processed.")
+        
+        if 200 <= add_response.status_code < 400:
+            await self.interaction.followup.send(content=f"`{self.interaction.user.name} your request to (re)grab {media_info['series']}` Season {media_info['seasonNumber']}) Episode {media_info['episodeNumber']} is being processed.")
+        else:
+            await self.interaction.followup.send(content=f"`{self.interaction.user.name} your request to (re)grab {media_info['series']}` Season {media_info['seasonNumber']}) Episode {media_info['episodeNumber']} had an issue, please contact the admin")
 
     # Cancel just responds with msg
     async def cancel_callback(self, button):
