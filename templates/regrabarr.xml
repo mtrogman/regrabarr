@@ -13,7 +13,8 @@
     <Support>https://discord.gg/jZWZh5CS6c</Support>
     <Project>https://github.com/mtrogman/regrabarr</Project>
     <Overview>(RE)grabarr is a Discord bot that allows end users to regrab (delete and redownload) content.</Overview>
-    <Category>Tools: MediaServer Status:Beta</Category>
+    <Category>Tools: MediaServer Status:Stable</Category>
+    <Icon>https://raw.githubusercontent.com/mtrogman/regrabarr/master/logo.png</Icon>
     <TemplateURL>https://raw.githubusercontent.com/mtrogman/unraid_templates/main/templates/regrabarr.xml</TemplateURL>
     <Maintainer>
         <WebPage>https://github.com/mtrogman</WebPage>
