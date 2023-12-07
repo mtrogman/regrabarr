@@ -1,8 +1,12 @@
 name: Copy Unraid Community Applications template(s) to templates repository
 
 on:
+  workflow_run:
+    workflows: ["Create Release"]
+    types:
+      - completed
   release:
-    types: [ created ]
+    types: [created]
   workflow_dispatch: ~
 
 jobs:
