@@ -19,5 +19,5 @@
     <Maintainer>
         <WebPage>https://github.com/mtrogman</WebPage>
     </Maintainer>
-    <Config Name="Config Path" Target="/config" Default="/mnt/user/appdata/regrabarr/config" Mode="rw" Description="Where config file will be stored" Type="Path" Display="advanced" Required="true" Mask="false">/mnt/user/appdata/regrabarr/config</Config>
+    <Config Name="Config Path" Target="/config" Default="/mnt/user/appdata/regrabarr/config" Mode="rw" Description="Where config file will be stored" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/regrabarr/config</Config>
 </Container>
