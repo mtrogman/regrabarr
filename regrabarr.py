@@ -22,9 +22,9 @@ config_location = "/config/config.yml"
 config = get_config(config_location)
 bot_token = config['bot']['token']
 radarr_api_key = config['radarr']['api_key']
-radarr_base_url = config['radarr']['url']
+radarr_base_url = config['radarr']['url'].rstrip('/')
 sonarr_api_key = config['sonarr']['api_key']
-sonarr_base_url = config['sonarr']['url']
+sonarr_base_url = config['sonarr']['url'].rstrip('/')
 
 # Requests Session
 session = requests.Session()
@@ -119,7 +119,7 @@ class ConfirmButtonsMovie(View):
         logging.info(f"Added {movie_title} with a response of {add_response}")
 
         if add_response and 200 <= add_response.status_code < 400:
-            await self.interaction.followup.send(content=f"`{self.interaction.user.name} your request to delete and redownload {movie_title}` ({movie_year}) is being processed.")
+            await self.interaction.followup.send(content=f"`{self.interaction.user.name}` your request to delete and redownload {movie_title} ({movie_year}) is being processed.")
         else:
             await self.interaction.followup.send(content=f"`{self.interaction.user.name}` your request of {movie_title} ({movie_year}) had an issue, please contact the admin")
 
@@ -170,9 +170,9 @@ class ConfirmButtonsSeries(View):
             logging.error(f"Error searching for EpisodeID {self.media_info['episodeId']}: {e}")
 
         if search_response and 200 <= search_response.status_code < 400:
-            await self.interaction.followup.send(content=f"`{self.interaction.user.name} your request to (re)grab {self.media_info['series']}` Season {self.media_info['seasonNumber']} Episode {self.media_info['episodeNumber']} is being processed.")
+            await self.interaction.followup.send(content=f"`{self.interaction.user.name}` your request to (re)grab {self.media_info['series']} Season {self.media_info['seasonNumber']} Episode {self.media_info['episodeNumber']} is being processed.")
         else:
-            await self.interaction.followup.send(content=f"`{self.interaction.user.name} your request to (re)grab {self.media_info['series']}` Season {self.media_info['seasonNumber']} Episode {self.media_info['episodeNumber']} had an issue, please contact the admin")
+            await self.interaction.followup.send(content=f"`{self.interaction.user.name}` your request to (re)grab {self.media_info['series']} Season {self.media_info['seasonNumber']} Episode {self.media_info['episodeNumber']} had an issue, please contact the admin")
 
     async def cancel_callback(self, button):
         await self.interaction.delete_original_response()
