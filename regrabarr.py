@@ -30,10 +30,10 @@ sonarr_base_url = config['sonarr']['url'].rstrip('/')
 session = requests.Session()
 
 def get_root_folders(base_url, api_key):
-    url = f"{base_url}/api/v3/rootfolder"
-    headers = {'X-Api-Key': api_key}
+    url = f"{base_url}/rootfolder?apikey={api_key}"
     try:
-        response = session.get(url, headers=headers)
+        response = session.get(url)
+        print(response)
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
