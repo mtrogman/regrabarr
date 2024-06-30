@@ -12,11 +12,13 @@ import logging
 bot = commands.Bot(command_prefix="!", intents=discord.Intents.all())
 logging.basicConfig(stream=sys.stdout, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+
 # Load configuration
 def get_config(file):
     with open(file, 'r') as yaml_file:
         config = yaml.safe_load(yaml_file)
     return config
+
 
 config_location = "/config/config.yml"
 config = get_config(config_location)
@@ -29,16 +31,17 @@ sonarr_base_url = config['sonarr']['url'].rstrip('/')
 # Requests Session
 session = requests.Session()
 
+
 def get_root_folders(base_url, api_key):
     url = f"{base_url}/rootfolder?apikey={api_key}"
     try:
         response = session.get(url)
-        print(response)
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
         logging.error(f"Failed to get root folders: {e}")
         return []
+
 
 def select_root_folder(root_folders):
     if root_folders:
@@ -46,13 +49,14 @@ def select_root_folder(root_folders):
     else:
         raise Exception("No root folders available")
 
+
 try:
     sonarr_root_folders = get_root_folders(sonarr_base_url, sonarr_api_key)
     radarr_root_folders = get_root_folders(radarr_base_url, radarr_api_key)
-    
+
     sonarr_root_folder_path = select_root_folder(sonarr_root_folders)
     radarr_root_folder_path = select_root_folder(radarr_root_folders)
-    
+
     logging.info(f"Selected Sonarr Root Folder Path: {sonarr_root_folder_path}")
     logging.info(f"Selected Radarr Root Folder Path: {radarr_root_folder_path}")
 
@@ -60,10 +64,11 @@ except Exception as e:
     logging.error(f"Error: {e}")
     sys.exit(1)
 
-def perform_request(method, url, data=None, headers=None):
+
+def perform_request(method, url, data=None, headers=None, params=None):
     try:
         if method == 'GET':
-            response = session.get(url, headers=headers)
+            response = session.get(url, headers=headers, params=params)
         elif method == 'POST':
             response = session.post(url, json=data, headers=headers)
         elif method == 'DELETE':
@@ -75,6 +80,7 @@ def perform_request(method, url, data=None, headers=None):
     except requests.exceptions.RequestException as e:
         logging.error(f"Error performing {method} request: {e}")
         return None
+
 
 class ConfirmButtonsMovie(View):
     def __init__(self, interaction, media_info):
@@ -127,6 +133,7 @@ class ConfirmButtonsMovie(View):
         await self.interaction.delete_original_response()
         await self.interaction.followup.send(content="Cancelled the request.", ephemeral=True)
 
+
 class ConfirmButtonsSeries(View):
     def __init__(self, interaction, media_info):
         super().__init__()
@@ -178,11 +185,13 @@ class ConfirmButtonsSeries(View):
         await self.interaction.delete_original_response()
         await self.interaction.followup.send(content="Cancelled the request.", ephemeral=True)
 
+
 class MovieSelectorView(View):
     def __init__(self, search_results, media_info):
         super().__init__()
         self.search_results = search_results
         self.add_item(MovieSelector(search_results, media_info))
+
 
 class MovieSelector(Select):
     def __init__(self, search_results, media_info):
@@ -214,6 +223,7 @@ class MovieSelector(Select):
         confirmation_view = ConfirmButtonsMovie(interaction, selected_movie_data)
         await interaction.response.edit_message(content=confirmation_message, view=confirmation_view)
 
+
 async def fetch_movie(movie_name):
     url = f"{radarr_base_url}/movie/lookup?term={movie_name}"
     headers = {"X-Api-Key": radarr_api_key}
@@ -228,12 +238,14 @@ async def fetch_movie(movie_name):
         logging.error(f"Error fetching movie data: {e}")
         return []
 
+
 class SeriesSelectorView(View):
     def __init__(self, series_results, media_info):
         super().__init__()
         self.series_results = series_results
         self.media_info = media_info
         self.add_item(TVSeriesSelector(series_results, media_info))
+
 
 class TVSeriesSelector(Select):
     def __init__(self, series_results, media_info):
@@ -257,6 +269,7 @@ class TVSeriesSelector(Select):
         self.media_info['seriesId'] = selected_series_data['id']
         await interaction.response.edit_message(content="Please select a season", view=SeasonSelectorView(seasons_results, self.media_info))
 
+
 async def fetch_series(series_name):
     url = f"{sonarr_base_url}/series/lookup?term={series_name}"
     headers = {"X-Api-Key": sonarr_api_key}
@@ -271,12 +284,14 @@ async def fetch_series(series_name):
         logging.error(f"Error fetching series data: {e}")
         return []
 
+
 class SeasonSelectorView(View):
     def __init__(self, season_results, media_info):
         super().__init__()
         self.season_results = season_results
         self.media_info = media_info
         self.add_item(SeasonSelector(season_results, media_info))
+
 
 class SeasonSelector(Select):
     def __init__(self, seasons_results, media_info):
@@ -297,10 +312,12 @@ class SeasonSelector(Select):
         episode_results = await fetch_episodes(self.media_info)
         await interaction.response.edit_message(content="Please select an episode", view=EpisodeSelectorView(episode_results, self.media_info))
 
+
 async def fetch_seasons(selected_series_data):
     seasons = selected_series_data.get('seasons', [])
     seasons = [season for season in seasons if season['seasonNumber'] != 0]
     return seasons
+
 
 class EpisodeSelectorView(View):
     def __init__(self, episode_results, media_info):
@@ -308,6 +325,7 @@ class EpisodeSelectorView(View):
         self.series_results = episode_results
         self.media_info = media_info
         self.add_item(EpisodeSelector(episode_results, media_info))
+
 
 class EpisodeSelector(Select):
     def __init__(self, episodes_results, media_info):
@@ -350,23 +368,28 @@ class EpisodeSelector(Select):
         confirmation_view = ConfirmButtonsSeries(interaction, self.media_info)
         await interaction.response.edit_message(content=confirmation_message, view=confirmation_view)
 
+
 async def fetch_episodes(media_info):
     url = f"{sonarr_base_url}/episode"
-    parameters = {
+    params = {
         'seriesId': media_info['seriesId'],
         'seasonNumber': media_info['seasonNumber']
     }
     headers = {"X-Api-Key": sonarr_api_key}
+    logging.info(f"Fetching episodes with URL: {url}, params: {params}")
+
     try:
-        response = perform_request('GET', url, headers=headers, data=parameters)
+        response = perform_request('GET', url, headers=headers, params=params)
         if response and response.status_code == 200:
             return response.json()
         else:
-            logging.warn(f"Response was not a 200 (was a {response.status_code}) for fetch episode of {media_info['seriesId']} Season {media_info['seasonNumber']}")
+            logging.warning(f"Response was not a 200 (was a {response.status_code}) for fetch episode of {media_info['seriesId']} Season {media_info['seasonNumber']}")
             return []
     except requests.exceptions.RequestException as e:
         logging.error(f"Error fetching episode data: {e}")
         return []
+
+
 
 async def fetch_episode_details(episode_results, media_info):
     episode_details = episode_results[media_info['episodeArrayNumber']]
@@ -377,7 +400,9 @@ async def fetch_episode_details(episode_results, media_info):
     media_info['episodeId'] = episode_details['id']
     media_info['airDate'] = episode_details['airDate']
 
+
 media_info = {}
+
 
 @bot.event
 async def on_ready():
@@ -387,6 +412,7 @@ async def on_ready():
         logging.info(f"Synced {len(synced)} command(s)")
     except Exception as e:
         logging.error(f"{e}")
+
 
 @bot.tree.command(name="regrab_movie", description="Will delete and redownload selected movie")
 @app_commands.describe(movie="What movie should we regrab?")
@@ -400,6 +426,7 @@ async def regrab_movie(ctx, *, movie: str):
     media_info['delete'] = 'yes'
     await ctx.response.send_message("Select a movie to regrab", view=MovieSelectorView(movie_results, media_info), ephemeral=True)
 
+
 @bot.tree.command(name="regrab_episode", description="Will delete and redownload selected episode")
 @app_commands.describe(series="What TV series should we regrab from?")
 async def regrab_episode(ctx, *, series: str):
@@ -410,5 +437,6 @@ async def regrab_episode(ctx, *, series: str):
     media_info['what'] = 'series'
     media_info['delete'] = 'yes'
     await ctx.response.send_message("Select a TV series to regrab", view=SeriesSelectorView(series_results, media_info), ephemeral=True)
+
 
 bot.run(bot_token)
