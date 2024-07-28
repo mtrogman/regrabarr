@@ -1,5 +1,7 @@
 bot:
   token: PUT_DISCORD_BOT_TOKEN_HERE
+  regrab_movie: PUT_NAME_OF_REGRAB_MOVIE_APP_CONFIG_HERE
+  regrab_episode: PUT_NAME_OF_REGRAB_EPISODE_APP_CONFIG_HERE
 
 sonarr:
   api_key: PUT_SONARR_API_KEY_HERE
