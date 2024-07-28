@@ -28,6 +28,9 @@ radarr_base_url = config['radarr']['url'].rstrip('/')
 sonarr_api_key = config['sonarr']['api_key']
 sonarr_base_url = config['sonarr']['url'].rstrip('/')
 
+regrab_movie_command_name = config['bot'].get('regrab_movie', 'regrab_movie')
+regrab_episode_command_name = config['bot'].get('regrab_episode', 'regrab_episode')
+
 # Requests Session
 session = requests.Session()
 
@@ -390,7 +393,6 @@ async def fetch_episodes(media_info):
         return []
 
 
-
 async def fetch_episode_details(episode_results, media_info):
     episode_details = episode_results[media_info['episodeArrayNumber']]
     media_info['title'] = episode_details['title']
@@ -414,7 +416,7 @@ async def on_ready():
         logging.error(f"{e}")
 
 
-@bot.tree.command(name="regrab_movie", description="Will delete and redownload selected movie")
+@bot.tree.command(name=regrab_movie_command_name, description="Will delete and redownload selected movie")
 @app_commands.describe(movie="What movie should we regrab?")
 async def regrab_movie(ctx, *, movie: str):
     movie_results = await fetch_movie(movie)
@@ -427,7 +429,7 @@ async def regrab_movie(ctx, *, movie: str):
     await ctx.response.send_message("Select a movie to regrab", view=MovieSelectorView(movie_results, media_info), ephemeral=True)
 
 
-@bot.tree.command(name="regrab_episode", description="Will delete and redownload selected episode")
+@bot.tree.command(name=regrab_episode_command_name, description="Will delete and redownload selected episode")
 @app_commands.describe(series="What TV series should we regrab from?")
 async def regrab_episode(ctx, *, series: str):
     series_results = await fetch_series(series)
