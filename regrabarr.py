@@ -20,7 +20,7 @@ def get_config(file):
     return config
 
 
-config_location = "./config/config.yml"
+config_location = "/config/config.yml"
 config = get_config(config_location)
 bot_token = config['bot']['token']
 radarr_api_key = config['radarr']['api_key']
