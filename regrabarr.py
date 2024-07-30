@@ -34,6 +34,15 @@ regrab_episode_command_name = config['bot'].get('regrab_episode', 'regrab_episod
 # Requests Session
 session = requests.Session()
 
+def get_quality_profiles(base_url, api_key):
+    url = f"{base_url}/qualityprofile?apikey={api_key}"
+    try:
+        response = session.get(url)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Failed to get quality profiles: {e}")
+        return []
 
 def get_root_folders(base_url, api_key):
     url = f"{base_url}/rootfolder?apikey={api_key}"
@@ -60,8 +69,16 @@ try:
     sonarr_root_folder_path = select_root_folder(sonarr_root_folders)
     radarr_root_folder_path = select_root_folder(radarr_root_folders)
 
+    radarr_quality_profiles = get_quality_profiles(radarr_base_url, radarr_api_key)
+    sonarr_quality_profiles = get_quality_profiles(sonarr_base_url, sonarr_api_key)
+
+    radarr_quality_profile_id = radarr_quality_profiles[0]['id']
+    sonarr_quality_profile_id = sonarr_quality_profiles[0]['id']
+
     logging.info(f"Selected Sonarr Root Folder Path: {sonarr_root_folder_path}")
     logging.info(f"Selected Radarr Root Folder Path: {radarr_root_folder_path}")
+    logging.info(f"Selected Radarr Quality Profile ID: {radarr_quality_profile_id}")
+    logging.info(f"Selected Sonarr Quality Profile ID: {sonarr_quality_profile_id}")
 
 except Exception as e:
     logging.error(f"Error: {e}")
@@ -99,10 +116,10 @@ class ConfirmButtonsMovie(View):
         cancel_button.callback = self.cancel_callback
         self.add_item(cancel_button)
 
-    async def regrab_callback(self, button):
+    async def regrab_callback(self, interaction):
         movie_title = self.media_info['title']
         movie_year = self.media_info['year']
-        movie_id = self.media_info['id']
+        movie_id = self.media_info['movieId']
         movie_tmdb = self.media_info['tmdbId']
 
         await self.interaction.delete_original_response()
@@ -114,25 +131,30 @@ class ConfirmButtonsMovie(View):
         add_url = f"{radarr_base_url}/movie?apikey={radarr_api_key}"
         data = {
             "tmdbId": movie_tmdb,
+            "title": movie_title,
+            "year": movie_year,
+            "qualityProfileId": radarr_quality_profile_id,
+            "rootFolderPath": radarr_root_folder_path,
             "monitored": True,
-            "qualityProfileId": 1,
             "minimumAvailability": "released",
             "addOptions": {
                 "searchForMovie": True
-            },
-            "rootFolderPath": radarr_root_folder_path,
-            "title": movie_title
+            }
         }
         headers = {"Content-Type": "application/json"}
         add_response = perform_request('POST', add_url, data, headers)
-        logging.info(f"Added {movie_title} with a response of {add_response}")
+        logging.info(f"Data sent for adding movie: {data}")
+        if add_response:
+            logging.info(f"Added {movie_title} with a response of {add_response}")
+        else:
+            logging.error(f"Failed to add {movie_title}")
 
         if add_response and 200 <= add_response.status_code < 400:
             await self.interaction.followup.send(content=f"`{self.interaction.user.name}` your request to delete and redownload {movie_title} ({movie_year}) is being processed.")
         else:
             await self.interaction.followup.send(content=f"`{self.interaction.user.name}` your request of {movie_title} ({movie_year}) had an issue, please contact the admin")
 
-    async def cancel_callback(self, button):
+    async def cancel_callback(self, interaction):
         await self.interaction.delete_original_response()
         await self.interaction.followup.send(content="Cancelled the request.", ephemeral=True)
 
@@ -151,7 +173,7 @@ class ConfirmButtonsSeries(View):
         cancel_button.callback = self.cancel_callback
         self.add_item(cancel_button)
 
-    async def regrab_callback(self, button):
+    async def regrab_callback(self, interaction):
         await self.interaction.delete_original_response()
 
         if self.media_info['episodeFileId'] != 0:
@@ -184,7 +206,7 @@ class ConfirmButtonsSeries(View):
         else:
             await self.interaction.followup.send(content=f"`{self.interaction.user.name}` your request to (re)grab {self.media_info['series']} Season {self.media_info['seasonNumber']} Episode {self.media_info['episodeNumber']} had an issue, please contact the admin")
 
-    async def cancel_callback(self, button):
+    async def cancel_callback(self, interaction):
         await self.interaction.delete_original_response()
         await self.interaction.followup.send(content="Cancelled the request.", ephemeral=True)
 
@@ -213,17 +235,19 @@ class MovieSelector(Select):
     async def callback(self, interaction: discord.Interaction):
         selected_movie_index = int(self.values[0])
         selected_movie_data = self.search_results[selected_movie_index]
-        self.media_info['movieId'] = selected_movie_data['id']
-        self.media_info['title'] = selected_movie_data['title']
-        self.media_info['year'] = selected_movie_data['year']
-        self.media_info['overview'] = selected_movie_data['overview']
+        self.media_info['movieId'] = selected_movie_data.get('id', 'N/A')
+        self.media_info['tmdbId'] = selected_movie_data.get('tmdbId', 'N/A')
+        self.media_info['title'] = selected_movie_data.get('title', 'Unknown Title')
+        self.media_info['year'] = selected_movie_data.get('year', 'Unknown Year')
+        self.media_info['overview'] = selected_movie_data.get('overview', 'No overview available')
+
         confirmation_message = (
             f"Please confirm that you would like to regrab the following movie:\n"
             f"**Title:** {self.media_info['title']}\n"
             f"**Year:** {self.media_info['year']}\n"
             f"**Overview:** {self.media_info['overview']}\n"
         )
-        confirmation_view = ConfirmButtonsMovie(interaction, selected_movie_data)
+        confirmation_view = ConfirmButtonsMovie(interaction, self.media_info)
         await interaction.response.edit_message(content=confirmation_message, view=confirmation_view)
 
 
