@@ -1,7 +1,12 @@
 bot:
   token: PUT_DISCORD_BOT_TOKEN_HERE
-  regrab_movie: PUT_NAME_OF_REGRAB_MOVIE_APP_CONFIG_HERE
-  regrab_episode: PUT_NAME_OF_REGRAB_EPISODE_APP_CONFIG_HERE
+  regrab_movie: regrab_movie
+  regrab_episode: regrab_episode
+  # Optional: Restrict commands to specific Discord roles
+  # If not specified or empty, all users can use commands
+  authorized_roles:
+    # - Admin
+    # - Media Manager
 
 sonarr:
   api_key: PUT_SONARR_API_KEY_HERE
@@ -9,4 +14,4 @@ sonarr:
 
 radarr:
   api_key: PUT_RADARR_API_KEY_HERE
-  url: https://X.X.X.X:7878/api/v3
+  url: http://X.X.X.X:7878/api/v3

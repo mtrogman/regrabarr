@@ -1,0 +1,122 @@
+name: Run Tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.9', '3.10', '3.11', '3.12']
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Run unit tests
+        run: |
+          pytest -m unit --cov=. --cov-report=xml --cov-report=term-missing -v
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        if: matrix.python-version == '3.11'
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false
+          verbose: true
+
+  lint:
+    name: Code Quality
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Run flake8
+        run: |
+          flake8 regrabarr.py --max-line-length=150 --ignore=E501,W503
+        continue-on-error: true
+
+      - name: Check formatting with black
+        run: |
+          black --check --diff regrabarr.py
+        continue-on-error: true
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    # Integration tests require secrets and manual trigger
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Create config file
+        run: |
+          mkdir -p config
+          cat << EOF > config/config.yml
+          bot:
+            token: ${{ secrets.DISCORD_BOT_TOKEN }}
+            regrab_movie: regrab_movie
+            regrab_episode: regrab_episode
+          sonarr:
+            api_key: ${{ secrets.SONARR_API_KEY }}
+            url: ${{ secrets.SONARR_URL }}
+          radarr:
+            api_key: ${{ secrets.RADARR_API_KEY }}
+            url: ${{ secrets.RADARR_URL }}
+          EOF
+
+      - name: Run integration tests
+        run: |
+          pytest -m integration -v
+        env:
+          PYTHONPATH: .
