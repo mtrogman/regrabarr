@@ -1,27 +1,84 @@
+"""
+Regrabarr - Discord bot for managing Sonarr/Radarr media re-downloads.
+Enterprise-grade implementation with security hardening.
+"""
 import sys
+import asyncio
+import urllib.parse
+from datetime import datetime
+from typing import Optional, Dict, Any, List
+
+import aiohttp
 import discord
 from discord import app_commands
 from discord.ext import commands
 from discord.ui import Select, View, Button
-from datetime import datetime
-import requests
 import yaml
 import logging
 
-# Initialize bot and logging
-bot = commands.Bot(command_prefix="!", intents=discord.Intents.all())
-logging.basicConfig(stream=sys.stdout, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# ============================================================================
+# Constants
+# ============================================================================
+REQUEST_TIMEOUT = 30  # seconds
+MAX_SEARCH_RESULTS = 10
+MAX_INPUT_LENGTH = 200
+VIEW_TIMEOUT = 300  # 5 minutes for UI interactions
+MAX_RETRIES = 3
+RETRY_DELAY = 1  # seconds
 
+# ============================================================================
+# Logging Configuration
+# ============================================================================
+logging.basicConfig(
+    stream=sys.stdout,
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
-# Load configuration
-def get_config(file):
-    with open(file, 'r') as yaml_file:
-        config = yaml.safe_load(yaml_file)
+# ============================================================================
+# Configuration Loading and Validation
+# ============================================================================
+def load_config(file_path: str) -> dict:
+    """Load and validate configuration from YAML file."""
+    try:
+        with open(file_path, 'r') as yaml_file:
+            config = yaml.safe_load(yaml_file)
+    except FileNotFoundError:
+        logger.error(f"Configuration file not found: {file_path}")
+        sys.exit(1)
+    except yaml.YAMLError as e:
+        logger.error(f"Invalid YAML in configuration file: {e}")
+        sys.exit(1)
+
+    # Validate required fields
+    required_fields = [
+        ('bot', 'token'),
+        ('sonarr', 'api_key'),
+        ('sonarr', 'url'),
+        ('radarr', 'api_key'),
+        ('radarr', 'url'),
+    ]
+
+    for section, field in required_fields:
+        if section not in config:
+            logger.error(f"Missing required config section: {section}")
+            sys.exit(1)
+        if field not in config[section]:
+            logger.error(f"Missing required config field: {section}.{field}")
+            sys.exit(1)
+        if not config[section][field]:
+            logger.error(f"Empty required config field: {section}.{field}")
+            sys.exit(1)
+
     return config
 
 
+# Load configuration
 config_location = "/config/config.yml"
-config = get_config(config_location)
+config = load_config(config_location)
+
+# Extract configuration values
 bot_token = config['bot']['token']
 radarr_api_key = config['radarr']['api_key']
 radarr_base_url = config['radarr']['url'].rstrip('/')
@@ -31,82 +88,385 @@ sonarr_base_url = config['sonarr']['url'].rstrip('/')
 regrab_movie_command_name = config['bot'].get('regrab_movie', 'regrab_movie')
 regrab_episode_command_name = config['bot'].get('regrab_episode', 'regrab_episode')
 
-# Requests Session
-session = requests.Session()
+# Optional: Authorized roles (if not specified, all users can use commands)
+authorized_roles = config['bot'].get('authorized_roles', [])
 
-def get_quality_profiles(base_url, api_key):
-    url = f"{base_url}/qualityprofile?apikey={api_key}"
-    try:
-        response = session.get(url)
-        response.raise_for_status()
+# ============================================================================
+# Discord Bot Initialization (Minimal Intents)
+# ============================================================================
+intents = discord.Intents.default()
+# Only enable intents we actually need
+intents.guilds = True  # Required for slash commands
+bot = commands.Bot(command_prefix="!", intents=intents)
+
+# Global aiohttp session (initialized on bot ready)
+http_session: Optional[aiohttp.ClientSession] = None
+
+# Cached configuration values (populated on startup)
+sonarr_root_folder_path: Optional[str] = None
+radarr_root_folder_path: Optional[str] = None
+sonarr_quality_profile_id: Optional[int] = None
+radarr_quality_profile_id: Optional[int] = None
+
+
+# ============================================================================
+# Input Validation
+# ============================================================================
+def sanitize_input(user_input: str) -> str:
+    """Sanitize and validate user input."""
+    if not user_input:
+        return ""
+    # Strip whitespace and limit length
+    sanitized = user_input.strip()[:MAX_INPUT_LENGTH]
+    # URL encode for safe use in API calls
+    return urllib.parse.quote(sanitized, safe='')
+
+
+def validate_input(user_input: str) -> tuple[bool, str]:
+    """Validate user input and return (is_valid, sanitized_input or error_message)."""
+    if not user_input or not user_input.strip():
+        return False, "Search term cannot be empty"
+    if len(user_input) > MAX_INPUT_LENGTH:
+        return False, f"Search term too long (max {MAX_INPUT_LENGTH} characters)"
+    return True, user_input.strip()
+
+
+# ============================================================================
+# Authorization Check
+# ============================================================================
+def check_authorization(interaction: discord.Interaction) -> bool:
+    """Check if user is authorized to use regrab commands."""
+    # If no roles configured, allow all users
+    if not authorized_roles:
+        return True
+
+    # Check if user has any of the authorized roles
+    if interaction.guild is None:
+        return False
+
+    member = interaction.guild.get_member(interaction.user.id)
+    if member is None:
+        return False
+
+    user_role_names = [role.name.lower() for role in member.roles]
+    for auth_role in authorized_roles:
+        if auth_role.lower() in user_role_names:
+            return True
+
+    return False
+
+
+# ============================================================================
+# Async HTTP Client with Retry Logic
+# ============================================================================
+async def perform_request(
+    method: str,
+    url: str,
+    headers: Optional[Dict[str, str]] = None,
+    params: Optional[Dict[str, Any]] = None,
+    json_data: Optional[Dict[str, Any]] = None,
+    timeout: int = REQUEST_TIMEOUT
+) -> Optional[aiohttp.ClientResponse]:
+    """
+    Perform an async HTTP request with retry logic and proper error handling.
+    API keys are passed via headers, never in URLs.
+    """
+    global http_session
+
+    if http_session is None or http_session.closed:
+        http_session = aiohttp.ClientSession()
+
+    for attempt in range(MAX_RETRIES):
+        try:
+            timeout_config = aiohttp.ClientTimeout(total=timeout)
+
+            async with http_session.request(
+                method=method,
+                url=url,
+                headers=headers,
+                params=params,
+                json=json_data,
+                timeout=timeout_config
+            ) as response:
+                # Read the response body while in context
+                response_data = await response.read()
+                # Create a simple response object to return
+                return ResponseWrapper(
+                    status_code=response.status,
+                    data=response_data,
+                    headers=dict(response.headers)
+                )
+
+        except aiohttp.ClientError as e:
+            logger.warning(f"Request attempt {attempt + 1}/{MAX_RETRIES} failed: {e}")
+            if attempt < MAX_RETRIES - 1:
+                await asyncio.sleep(RETRY_DELAY * (attempt + 1))  # Exponential backoff
+            else:
+                logger.error(f"All {MAX_RETRIES} request attempts failed for {url}: {e}")
+                return None
+
+        except asyncio.TimeoutError:
+            logger.warning(f"Request timeout (attempt {attempt + 1}/{MAX_RETRIES}) for {url}")
+            if attempt < MAX_RETRIES - 1:
+                await asyncio.sleep(RETRY_DELAY * (attempt + 1))
+            else:
+                logger.error(f"Request timed out after {MAX_RETRIES} attempts: {url}")
+                return None
+
+    return None
+
+
+class ResponseWrapper:
+    """Simple wrapper to hold response data after the context manager closes."""
+    def __init__(self, status_code: int, data: bytes, headers: dict):
+        self.status_code = status_code
+        self._data = data
+        self.headers = headers
+
+    def json(self) -> Any:
+        import json
+        return json.loads(self._data.decode('utf-8'))
+
+    @property
+    def ok(self) -> bool:
+        return 200 <= self.status_code < 400
+
+
+# ============================================================================
+# API Helper Functions (Headers-based Authentication)
+# ============================================================================
+def get_sonarr_headers() -> Dict[str, str]:
+    """Get headers for Sonarr API requests."""
+    return {
+        "X-Api-Key": sonarr_api_key,
+        "Content-Type": "application/json"
+    }
+
+
+def get_radarr_headers() -> Dict[str, str]:
+    """Get headers for Radarr API requests."""
+    return {
+        "X-Api-Key": radarr_api_key,
+        "Content-Type": "application/json"
+    }
+
+
+async def get_quality_profiles(base_url: str, headers: Dict[str, str]) -> List[dict]:
+    """Fetch quality profiles from Sonarr/Radarr."""
+    url = f"{base_url}/qualityprofile"
+    response = await perform_request('GET', url, headers=headers)
+
+    if response and response.ok:
         return response.json()
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Failed to get quality profiles: {e}")
-        return []
 
-def get_root_folders(base_url, api_key):
-    url = f"{base_url}/rootfolder?apikey={api_key}"
-    try:
-        response = session.get(url)
-        response.raise_for_status()
+    logger.error(f"Failed to get quality profiles from {base_url}")
+    return []
+
+
+async def get_root_folders(base_url: str, headers: Dict[str, str]) -> List[dict]:
+    """Fetch root folders from Sonarr/Radarr."""
+    url = f"{base_url}/rootfolder"
+    response = await perform_request('GET', url, headers=headers)
+
+    if response and response.ok:
         return response.json()
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Failed to get root folders: {e}")
-        return []
+
+    logger.error(f"Failed to get root folders from {base_url}")
+    return []
 
 
-def select_root_folder(root_folders):
-    if root_folders:
-        return root_folders[0]['path']
+def select_root_folder(root_folders: List[dict]) -> str:
+    """Select the first available root folder path."""
+    if not root_folders:
+        raise ValueError("No root folders available")
+    return root_folders[0]['path']
+
+
+def select_quality_profile(profiles: List[dict]) -> int:
+    """Select the first available quality profile ID."""
+    if not profiles:
+        raise ValueError("No quality profiles available")
+    return profiles[0]['id']
+
+
+# ============================================================================
+# Media Fetch Functions
+# ============================================================================
+async def fetch_movie(movie_name: str) -> List[dict]:
+    """Fetch movie search results from Radarr."""
+    # Input is already validated by command handler
+    url = f"{radarr_base_url}/movie/lookup"
+    params = {"term": movie_name}
+    headers = get_radarr_headers()
+
+    response = await perform_request('GET', url, headers=headers, params=params)
+
+    if response and response.ok:
+        movie_list = response.json()
+        return movie_list[:MAX_SEARCH_RESULTS]
+
+    logger.error(f"Failed to fetch movie data for: {movie_name}")
+    return []
+
+
+async def fetch_series(series_name: str) -> List[dict]:
+    """Fetch series search results from Sonarr."""
+    url = f"{sonarr_base_url}/series/lookup"
+    params = {"term": series_name}
+    headers = get_sonarr_headers()
+
+    response = await perform_request('GET', url, headers=headers, params=params)
+
+    if response and response.ok:
+        series_list = response.json()
+        return series_list[:MAX_SEARCH_RESULTS]
+
+    logger.error(f"Failed to fetch series data for: {series_name}")
+    return []
+
+
+def get_seasons(series_data: dict) -> List[dict]:
+    """Extract seasons from series data, excluding specials (season 0)."""
+    seasons = series_data.get('seasons', [])
+    return [season for season in seasons if season['seasonNumber'] != 0]
+
+
+async def fetch_episodes(series_id: int, season_number: int) -> List[dict]:
+    """Fetch episodes for a specific series and season."""
+    url = f"{sonarr_base_url}/episode"
+    params = {
+        'seriesId': series_id,
+        'seasonNumber': season_number
+    }
+    headers = get_sonarr_headers()
+
+    logger.info(f"Fetching episodes for series {series_id}, season {season_number}")
+    response = await perform_request('GET', url, headers=headers, params=params)
+
+    if response and response.ok:
+        return response.json()
+
+    logger.warning(f"Failed to fetch episodes for series {series_id}, season {season_number}")
+    return []
+
+
+def extract_episode_details(episode_data: dict) -> dict:
+    """Extract relevant details from episode data."""
+    return {
+        'title': episode_data.get('title', 'Unknown'),
+        'episodeNumber': episode_data.get('episodeNumber', 0),
+        'overview': episode_data.get('overview', 'No overview available'),
+        'episodeFileId': episode_data.get('episodeFileId', 0),
+        'episodeId': episode_data.get('id', 0),
+        'airDate': episode_data.get('airDate', 'Unknown'),
+    }
+
+
+# ============================================================================
+# Regrab Operations
+# ============================================================================
+async def regrab_movie_action(media_info: dict) -> tuple[bool, str]:
+    """
+    Execute the movie regrab action.
+    Returns (success, message).
+    """
+    movie_title = media_info['title']
+    movie_year = media_info['year']
+    movie_id = media_info['movieId']
+    movie_tmdb = media_info['tmdbId']
+
+    headers = get_radarr_headers()
+
+    # Step 1: Delete the movie
+    delete_url = f"{radarr_base_url}/movie/{movie_id}"
+    params = {"deleteFiles": "true"}
+
+    delete_response = await perform_request('DELETE', delete_url, headers=headers, params=params)
+
+    if delete_response:
+        logger.info(f"Deleted movie '{movie_title}' (ID: {movie_id}), status: {delete_response.status_code}")
     else:
-        raise Exception("No root folders available")
+        logger.warning(f"Delete request failed for movie '{movie_title}', continuing with add...")
+
+    # Step 2: Re-add the movie with search enabled
+    add_url = f"{radarr_base_url}/movie"
+    add_data = {
+        "tmdbId": movie_tmdb,
+        "title": movie_title,
+        "year": movie_year,
+        "qualityProfileId": radarr_quality_profile_id,
+        "rootFolderPath": radarr_root_folder_path,
+        "monitored": True,
+        "minimumAvailability": "released",
+        "addOptions": {
+            "searchForMovie": True
+        }
+    }
+
+    add_response = await perform_request('POST', add_url, headers=headers, json_data=add_data)
+
+    if add_response and add_response.ok:
+        logger.info(f"Added movie '{movie_title}' for download")
+        return True, f"Your request to delete and redownload {movie_title} ({movie_year}) is being processed."
+    else:
+        status = add_response.status_code if add_response else "No response"
+        logger.error(f"Failed to add movie '{movie_title}', status: {status}")
+        return False, f"Your request for {movie_title} ({movie_year}) had an issue, please contact the admin."
 
 
-try:
-    sonarr_root_folders = get_root_folders(sonarr_base_url, sonarr_api_key)
-    radarr_root_folders = get_root_folders(radarr_base_url, radarr_api_key)
+async def regrab_episode_action(media_info: dict) -> tuple[bool, str]:
+    """
+    Execute the episode regrab action.
+    Returns (success, message).
+    """
+    series_name = media_info['series']
+    season_num = media_info['seasonNumber']
+    episode_num = media_info['episodeNumber']
+    episode_file_id = media_info['episodeFileId']
+    episode_id = media_info['episodeId']
 
-    sonarr_root_folder_path = select_root_folder(sonarr_root_folders)
-    radarr_root_folder_path = select_root_folder(radarr_root_folders)
+    headers = get_sonarr_headers()
 
-    radarr_quality_profiles = get_quality_profiles(radarr_base_url, radarr_api_key)
-    sonarr_quality_profiles = get_quality_profiles(sonarr_base_url, sonarr_api_key)
+    # Step 1: Delete episode file if it exists
+    if episode_file_id and episode_file_id != 0:
+        delete_url = f"{sonarr_base_url}/episodefile/{episode_file_id}"
+        delete_response = await perform_request('DELETE', delete_url, headers=headers)
 
-    radarr_quality_profile_id = radarr_quality_profiles[0]['id']
-    sonarr_quality_profile_id = sonarr_quality_profiles[0]['id']
-
-    logging.info(f"Selected Sonarr Root Folder Path: {sonarr_root_folder_path}")
-    logging.info(f"Selected Radarr Root Folder Path: {radarr_root_folder_path}")
-    logging.info(f"Selected Radarr Quality Profile ID: {radarr_quality_profile_id}")
-    logging.info(f"Selected Sonarr Quality Profile ID: {sonarr_quality_profile_id}")
-
-except Exception as e:
-    logging.error(f"Error: {e}")
-    sys.exit(1)
-
-
-def perform_request(method, url, data=None, headers=None, params=None):
-    try:
-        if method == 'GET':
-            response = session.get(url, headers=headers, params=params)
-        elif method == 'POST':
-            response = session.post(url, json=data, headers=headers)
-        elif method == 'DELETE':
-            response = session.delete(url, headers=headers)
+        if delete_response:
+            logger.info(f"Deleted episode file {episode_file_id}, status: {delete_response.status_code}")
         else:
-            raise ValueError(f"Unsupported HTTP method: {method}")
-        response.raise_for_status()
-        return response
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Error performing {method} request: {e}")
-        return None
+            logger.warning(f"Failed to delete episode file {episode_file_id}")
+    else:
+        logger.info(f"No existing episode file to delete for {series_name} S{season_num}E{episode_num}")
+
+    # Step 2: Trigger episode search
+    search_url = f"{sonarr_base_url}/command"
+    search_data = {
+        "episodeIds": [episode_id],
+        "name": "EpisodeSearch",
+    }
+
+    search_response = await perform_request('POST', search_url, headers=headers, json_data=search_data)
+
+    if search_response and search_response.ok:
+        logger.info(f"Triggered search for {series_name} S{season_num}E{episode_num}")
+        return True, f"Your request to (re)grab {series_name} Season {season_num} Episode {episode_num} is being processed."
+    else:
+        status = search_response.status_code if search_response else "No response"
+        logger.error(f"Failed to trigger search for episode, status: {status}")
+        return False, f"Your request to (re)grab {series_name} Season {season_num} Episode {episode_num} had an issue, please contact the admin."
 
 
+# ============================================================================
+# Discord UI Components (Per-Interaction State)
+# ============================================================================
 class ConfirmButtonsMovie(View):
-    def __init__(self, interaction, media_info):
-        super().__init__()
-        self.interaction = interaction
-        self.media_info = media_info
+    """Confirmation buttons for movie regrab with per-interaction state."""
+
+    def __init__(self, interaction: discord.Interaction, media_info: dict):
+        super().__init__(timeout=VIEW_TIMEOUT)
+        self.original_interaction = interaction
+        self.media_info = media_info.copy()  # Copy to ensure isolation
 
         regrab_button = Button(style=discord.ButtonStyle.primary, label="Regrab")
         regrab_button.callback = self.regrab_callback
@@ -116,54 +476,36 @@ class ConfirmButtonsMovie(View):
         cancel_button.callback = self.cancel_callback
         self.add_item(cancel_button)
 
-    async def regrab_callback(self, interaction):
-        movie_title = self.media_info['title']
-        movie_year = self.media_info['year']
-        movie_id = self.media_info['movieId']
-        movie_tmdb = self.media_info['tmdbId']
+    async def regrab_callback(self, interaction: discord.Interaction):
+        await self.original_interaction.delete_original_response()
 
-        await self.interaction.delete_original_response()
+        success, message = await regrab_movie_action(self.media_info)
+        await self.original_interaction.followup.send(
+            content=f"`{self.original_interaction.user.name}` {message}"
+        )
 
-        delete_url = f"{radarr_base_url}/movie/{movie_id}?deleteFiles=true&apikey={radarr_api_key}"
-        delete_response = perform_request('DELETE', delete_url)
-        logging.info(f"Deleted {movie_title} with a response of {delete_response}")
+    async def cancel_callback(self, interaction: discord.Interaction):
+        await self.original_interaction.delete_original_response()
+        await self.original_interaction.followup.send(
+            content="Cancelled the request.",
+            ephemeral=True
+        )
 
-        add_url = f"{radarr_base_url}/movie?apikey={radarr_api_key}"
-        data = {
-            "tmdbId": movie_tmdb,
-            "title": movie_title,
-            "year": movie_year,
-            "qualityProfileId": radarr_quality_profile_id,
-            "rootFolderPath": radarr_root_folder_path,
-            "monitored": True,
-            "minimumAvailability": "released",
-            "addOptions": {
-                "searchForMovie": True
-            }
-        }
-        headers = {"Content-Type": "application/json"}
-        add_response = perform_request('POST', add_url, data, headers)
-        logging.info(f"Data sent for adding movie: {data}")
-        if add_response:
-            logging.info(f"Added {movie_title} with a response of {add_response}")
-        else:
-            logging.error(f"Failed to add {movie_title}")
-
-        if add_response and 200 <= add_response.status_code < 400:
-            await self.interaction.followup.send(content=f"`{self.interaction.user.name}` your request to delete and redownload {movie_title} ({movie_year}) is being processed.")
-        else:
-            await self.interaction.followup.send(content=f"`{self.interaction.user.name}` your request of {movie_title} ({movie_year}) had an issue, please contact the admin")
-
-    async def cancel_callback(self, interaction):
-        await self.interaction.delete_original_response()
-        await self.interaction.followup.send(content="Cancelled the request.", ephemeral=True)
+    async def on_timeout(self):
+        """Handle view timeout."""
+        try:
+            await self.original_interaction.delete_original_response()
+        except discord.NotFound:
+            pass  # Message already deleted
 
 
 class ConfirmButtonsSeries(View):
-    def __init__(self, interaction, media_info):
-        super().__init__()
-        self.interaction = interaction
-        self.media_info = media_info
+    """Confirmation buttons for episode regrab with per-interaction state."""
+
+    def __init__(self, interaction: discord.Interaction, media_info: dict):
+        super().__init__(timeout=VIEW_TIMEOUT)
+        self.original_interaction = interaction
+        self.media_info = media_info.copy()  # Copy to ensure isolation
 
         regrab_button = Button(style=discord.ButtonStyle.primary, label="Regrab")
         regrab_button.callback = self.regrab_callback
@@ -173,73 +515,74 @@ class ConfirmButtonsSeries(View):
         cancel_button.callback = self.cancel_callback
         self.add_item(cancel_button)
 
-    async def regrab_callback(self, interaction):
-        await self.interaction.delete_original_response()
+    async def regrab_callback(self, interaction: discord.Interaction):
+        await self.original_interaction.delete_original_response()
 
-        if self.media_info['episodeFileId'] != 0:
-            delete_url = f"{sonarr_base_url}/episodefile/{self.media_info['episodeFileId']}?apikey={sonarr_api_key}"
-            try:
-                delete_response = perform_request('DELETE', delete_url)
-                logging.info(f"Deleted EpisodeFileID {self.media_info['episodeFileId']} with a response of {delete_response.status_code}")
-            except requests.exceptions.RequestException as e:
-                logging.error(f"Error deleting EpisodeFileID {self.media_info['episodeFileId']}: {e}")
-        else:
-            logging.info(f"No Episode Found")
+        success, message = await regrab_episode_action(self.media_info)
+        await self.original_interaction.followup.send(
+            content=f"`{self.original_interaction.user.name}` {message}"
+        )
 
-        search_url = f"{sonarr_base_url}/command/"
-        headers = {
-            "Content-Type": "application/json",
-            "X-Api-Key": sonarr_api_key
-        }
-        data = {
-            "episodeIds": [self.media_info['episodeId']],
-            "name": "EpisodeSearch",
-        }
+    async def cancel_callback(self, interaction: discord.Interaction):
+        await self.original_interaction.delete_original_response()
+        await self.original_interaction.followup.send(
+            content="Cancelled the request.",
+            ephemeral=True
+        )
+
+    async def on_timeout(self):
+        """Handle view timeout."""
         try:
-            search_response = perform_request('POST', search_url, data, headers)
-            logging.info(f"Searching for EpisodeID {self.media_info['episodeNumber']} with a response of {search_response.status_code}")
-        except requests.exceptions.RequestException as e:
-            logging.error(f"Error searching for EpisodeID {self.media_info['episodeId']}: {e}")
-
-        if search_response and 200 <= search_response.status_code < 400:
-            await self.interaction.followup.send(content=f"`{self.interaction.user.name}` your request to (re)grab {self.media_info['series']} Season {self.media_info['seasonNumber']} Episode {self.media_info['episodeNumber']} is being processed.")
-        else:
-            await self.interaction.followup.send(content=f"`{self.interaction.user.name}` your request to (re)grab {self.media_info['series']} Season {self.media_info['seasonNumber']} Episode {self.media_info['episodeNumber']} had an issue, please contact the admin")
-
-    async def cancel_callback(self, interaction):
-        await self.interaction.delete_original_response()
-        await self.interaction.followup.send(content="Cancelled the request.", ephemeral=True)
+            await self.original_interaction.delete_original_response()
+        except discord.NotFound:
+            pass
 
 
 class MovieSelectorView(View):
-    def __init__(self, search_results, media_info):
-        super().__init__()
+    """Movie selection dropdown with per-interaction state."""
+
+    def __init__(self, search_results: List[dict], media_info: dict):
+        super().__init__(timeout=VIEW_TIMEOUT)
         self.search_results = search_results
+        self.media_info = media_info
         self.add_item(MovieSelector(search_results, media_info))
 
 
 class MovieSelector(Select):
-    def __init__(self, search_results, media_info):
+    """Dropdown for selecting a movie."""
+
+    def __init__(self, search_results: List[dict], media_info: dict):
         self.search_results = search_results
         self.media_info = media_info
-        options = [
-            discord.SelectOption(
-                label=movie['title'],
+
+        options = []
+        for idx, movie in enumerate(search_results[:25]):  # Discord limit: 25 options
+            # Truncate title if too long for Discord
+            title = movie.get('title', 'Unknown')[:100]
+            year = str(movie.get('year', 'Unknown'))[:100]
+            options.append(discord.SelectOption(
+                label=title,
                 value=str(idx),
-                description=str(movie['year'])
-            )
-            for idx, movie in enumerate(search_results)
-        ]
-        super().__init__(placeholder="Please select a movie", options=options, min_values=1, max_values=1)
+                description=year
+            ))
+
+        super().__init__(
+            placeholder="Please select a movie",
+            options=options,
+            min_values=1,
+            max_values=1
+        )
 
     async def callback(self, interaction: discord.Interaction):
-        selected_movie_index = int(self.values[0])
-        selected_movie_data = self.search_results[selected_movie_index]
-        self.media_info['movieId'] = selected_movie_data.get('id', 'N/A')
-        self.media_info['tmdbId'] = selected_movie_data.get('tmdbId', 'N/A')
-        self.media_info['title'] = selected_movie_data.get('title', 'Unknown Title')
-        self.media_info['year'] = selected_movie_data.get('year', 'Unknown Year')
-        self.media_info['overview'] = selected_movie_data.get('overview', 'No overview available')
+        selected_index = int(self.values[0])
+        selected_movie = self.search_results[selected_index]
+
+        # Update media_info with selected movie data
+        self.media_info['movieId'] = selected_movie.get('id', 0)
+        self.media_info['tmdbId'] = selected_movie.get('tmdbId', 0)
+        self.media_info['title'] = selected_movie.get('title', 'Unknown Title')
+        self.media_info['year'] = selected_movie.get('year', 'Unknown Year')
+        self.media_info['overview'] = selected_movie.get('overview', 'No overview available')[:1000]
 
         confirmation_message = (
             f"Please confirm that you would like to regrab the following movie:\n"
@@ -247,142 +590,196 @@ class MovieSelector(Select):
             f"**Year:** {self.media_info['year']}\n"
             f"**Overview:** {self.media_info['overview']}\n"
         )
+
         confirmation_view = ConfirmButtonsMovie(interaction, self.media_info)
         await interaction.response.edit_message(content=confirmation_message, view=confirmation_view)
 
 
-async def fetch_movie(movie_name):
-    url = f"{radarr_base_url}/movie/lookup?term={movie_name}"
-    headers = {"X-Api-Key": radarr_api_key}
-    try:
-        response = perform_request('GET', url, headers=headers)
-        if response and response.status_code == 200:
-            movie_list = response.json()
-            return movie_list[:10]
-        else:
-            return []
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Error fetching movie data: {e}")
-        return []
-
-
 class SeriesSelectorView(View):
-    def __init__(self, series_results, media_info):
-        super().__init__()
+    """Series selection dropdown with per-interaction state."""
+
+    def __init__(self, series_results: List[dict], media_info: dict):
+        super().__init__(timeout=VIEW_TIMEOUT)
         self.series_results = series_results
         self.media_info = media_info
         self.add_item(TVSeriesSelector(series_results, media_info))
 
 
 class TVSeriesSelector(Select):
-    def __init__(self, series_results, media_info):
+    """Dropdown for selecting a TV series."""
+
+    def __init__(self, series_results: List[dict], media_info: dict):
         self.series_results = series_results
         self.media_info = media_info
-        options = [
-            discord.SelectOption(
-                label=series['title'],
+
+        options = []
+        for idx, series in enumerate(series_results[:25]):
+            title = series.get('title', 'Unknown')[:100]
+            year = str(series.get('year', 'Unknown'))[:100]
+            options.append(discord.SelectOption(
+                label=title,
                 value=str(idx),
-                description=str(series['year'])
-            )
-            for idx, series in enumerate(series_results)
-        ]
-        super().__init__(placeholder="Please select a TV series", options=options, min_values=1, max_values=1)
+                description=year
+            ))
+
+        super().__init__(
+            placeholder="Please select a TV series",
+            options=options,
+            min_values=1,
+            max_values=1
+        )
 
     async def callback(self, interaction: discord.Interaction):
-        selected_series_index = int(self.values[0])
-        selected_series_data = self.series_results[selected_series_index]
-        seasons_results = await fetch_seasons(selected_series_data)
-        self.media_info['series'] = selected_series_data['title']
-        self.media_info['seriesId'] = selected_series_data['id']
-        await interaction.response.edit_message(content="Please select a season", view=SeasonSelectorView(seasons_results, self.media_info))
+        selected_index = int(self.values[0])
+        selected_series = self.series_results[selected_index]
 
+        self.media_info['series'] = selected_series.get('title', 'Unknown')
+        self.media_info['seriesId'] = selected_series.get('id', 0)
 
-async def fetch_series(series_name):
-    url = f"{sonarr_base_url}/series/lookup?term={series_name}"
-    headers = {"X-Api-Key": sonarr_api_key}
-    try:
-        response = perform_request('GET', url, headers=headers)
-        if response and response.status_code == 200:
-            series_list = response.json()
-            return series_list[:10]
-        else:
-            return []
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Error fetching series data: {e}")
-        return []
+        seasons = get_seasons(selected_series)
+
+        if not seasons:
+            await interaction.response.edit_message(
+                content="No seasons found for this series.",
+                view=None
+            )
+            return
+
+        await interaction.response.edit_message(
+            content="Please select a season",
+            view=SeasonSelectorView(seasons, self.media_info)
+        )
 
 
 class SeasonSelectorView(View):
-    def __init__(self, season_results, media_info):
-        super().__init__()
+    """Season selection dropdown with per-interaction state."""
+
+    def __init__(self, season_results: List[dict], media_info: dict):
+        super().__init__(timeout=VIEW_TIMEOUT)
         self.season_results = season_results
         self.media_info = media_info
         self.add_item(SeasonSelector(season_results, media_info))
 
 
 class SeasonSelector(Select):
-    def __init__(self, seasons_results, media_info):
+    """Dropdown for selecting a season."""
+
+    def __init__(self, seasons_results: List[dict], media_info: dict):
         self.seasons_results = seasons_results
         self.media_info = media_info
-        options = [
-            discord.SelectOption(
-                label=f"Season {season['seasonNumber']}",
+
+        options = []
+        for idx, season in enumerate(seasons_results[:25]):
+            season_num = season.get('seasonNumber', 0)
+            options.append(discord.SelectOption(
+                label=f"Season {season_num}",
                 value=str(idx)
-            )
-            for idx, season in enumerate(seasons_results)
-        ]
-        super().__init__(placeholder="Please select a season", options=options, min_values=1, max_values=1)
+            ))
+
+        super().__init__(
+            placeholder="Please select a season",
+            options=options,
+            min_values=1,
+            max_values=1
+        )
 
     async def callback(self, interaction: discord.Interaction):
-        selected_season_index = int(self.values[0])
-        self.media_info['seasonNumber'] = self.seasons_results[selected_season_index]['seasonNumber']
-        episode_results = await fetch_episodes(self.media_info)
-        await interaction.response.edit_message(content="Please select an episode", view=EpisodeSelectorView(episode_results, self.media_info))
+        selected_index = int(self.values[0])
+        selected_season = self.seasons_results[selected_index]
 
+        self.media_info['seasonNumber'] = selected_season.get('seasonNumber', 0)
 
-async def fetch_seasons(selected_series_data):
-    seasons = selected_series_data.get('seasons', [])
-    seasons = [season for season in seasons if season['seasonNumber'] != 0]
-    return seasons
+        episodes = await fetch_episodes(
+            self.media_info['seriesId'],
+            self.media_info['seasonNumber']
+        )
+
+        if not episodes:
+            await interaction.response.edit_message(
+                content="No episodes found for this season.",
+                view=None
+            )
+            return
+
+        await interaction.response.edit_message(
+            content="Please select an episode",
+            view=EpisodeSelectorView(episodes, self.media_info)
+        )
 
 
 class EpisodeSelectorView(View):
-    def __init__(self, episode_results, media_info):
-        super().__init__()
-        self.series_results = episode_results
+    """Episode selection dropdown with per-interaction state."""
+
+    def __init__(self, episode_results: List[dict], media_info: dict):
+        super().__init__(timeout=VIEW_TIMEOUT)
+        self.episode_results = episode_results
         self.media_info = media_info
         self.add_item(EpisodeSelector(episode_results, media_info))
 
 
 class EpisodeSelector(Select):
-    def __init__(self, episodes_results, media_info):
-        options = []
-        current_date = datetime.now().date()
+    """Dropdown for selecting an episode (only shows aired episodes)."""
+
+    def __init__(self, episodes_results: List[dict], media_info: dict):
+        self.episodes_results = episodes_results
         self.media_info = media_info
-        self.episode_results = episodes_results
+        self.episode_index_map = {}  # Maps option value to actual episode index
+
+        current_date = datetime.now().date()
+        options = []
+        option_idx = 0
 
         for idx, episode in enumerate(episodes_results):
-            episode_number = episode['episodeNumber']
-            episode_name = f"Episode {episode_number}"
-            air_date_str = episode.get('airDate', 'Air Date Unknown')
+            episode_number = episode.get('episodeNumber', 0)
+            air_date_str = episode.get('airDate', '')
+
+            # Check if episode has aired
             try:
                 air_date = datetime.strptime(air_date_str, "%Y-%m-%d").date()
-                is_past_air_date = air_date <= current_date
-            except ValueError:
-                is_past_air_date = False
+                is_aired = air_date <= current_date
+            except (ValueError, TypeError):
+                is_aired = False
 
-            if is_past_air_date:
-                formatted_description = f"Air Date: {air_date.strftime('%b %d %Y')}"
+            if is_aired and option_idx < 25:  # Discord limit
+                formatted_date = air_date.strftime('%b %d %Y') if air_date_str else 'Unknown'
                 options.append(discord.SelectOption(
-                    label=episode_name,
-                    value=str(idx),
-                    description=formatted_description
+                    label=f"Episode {episode_number}",
+                    value=str(option_idx),
+                    description=f"Air Date: {formatted_date}"
                 ))
-        super().__init__(placeholder="Please select an episode", options=options, min_values=1, max_values=1)
+                self.episode_index_map[str(option_idx)] = idx
+                option_idx += 1
+
+        if not options:
+            # Fallback if no aired episodes
+            options.append(discord.SelectOption(
+                label="No aired episodes",
+                value="none",
+                description="No episodes available"
+            ))
+
+        super().__init__(
+            placeholder="Please select an episode",
+            options=options,
+            min_values=1,
+            max_values=1
+        )
 
     async def callback(self, interaction: discord.Interaction):
-        self.media_info['episodeArrayNumber'] = int(self.values[0])
-        await fetch_episode_details(self.episode_results, self.media_info)
+        if self.values[0] == "none":
+            await interaction.response.edit_message(
+                content="No aired episodes available for selection.",
+                view=None
+            )
+            return
+
+        actual_index = self.episode_index_map.get(self.values[0], 0)
+        episode_data = self.episodes_results[actual_index]
+
+        # Extract episode details into media_info
+        details = extract_episode_details(episode_data)
+        self.media_info.update(details)
+
         confirmation_message = (
             f"Please confirm that you would like to regrab the following episode:\n"
             f"**Series:** {self.media_info['series']}\n"
@@ -390,79 +787,185 @@ class EpisodeSelector(Select):
             f"**Episode:** Episode {self.media_info['episodeNumber']}\n"
             f"**Title:** {self.media_info['title']}\n"
             f"**Air Date:** {self.media_info['airDate']}\n"
-            f"**Overview:** {self.media_info['overview']}\n"
+            f"**Overview:** {self.media_info['overview'][:500]}\n"
         )
+
         confirmation_view = ConfirmButtonsSeries(interaction, self.media_info)
         await interaction.response.edit_message(content=confirmation_message, view=confirmation_view)
 
 
-async def fetch_episodes(media_info):
-    url = f"{sonarr_base_url}/episode"
-    params = {
-        'seriesId': media_info['seriesId'],
-        'seasonNumber': media_info['seasonNumber']
-    }
-    headers = {"X-Api-Key": sonarr_api_key}
-    logging.info(f"Fetching episodes with URL: {url}, params: {params}")
+# ============================================================================
+# Bot Events
+# ============================================================================
+@bot.event
+async def on_ready():
+    """Initialize bot and fetch configuration from Sonarr/Radarr."""
+    global http_session, sonarr_root_folder_path, radarr_root_folder_path
+    global sonarr_quality_profile_id, radarr_quality_profile_id
+
+    logger.info('Bot is starting up...')
+
+    # Initialize HTTP session
+    http_session = aiohttp.ClientSession()
 
     try:
-        response = perform_request('GET', url, headers=headers, params=params)
-        if response and response.status_code == 200:
-            return response.json()
-        else:
-            logging.warning(f"Response was not a 200 (was a {response.status_code}) for fetch episode of {media_info['seriesId']} Season {media_info['seasonNumber']}")
-            return []
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Error fetching episode data: {e}")
-        return []
+        # Fetch Sonarr configuration
+        sonarr_headers = get_sonarr_headers()
+        sonarr_root_folders = await get_root_folders(sonarr_base_url, sonarr_headers)
+        sonarr_quality_profiles = await get_quality_profiles(sonarr_base_url, sonarr_headers)
 
+        sonarr_root_folder_path = select_root_folder(sonarr_root_folders)
+        sonarr_quality_profile_id = select_quality_profile(sonarr_quality_profiles)
 
-async def fetch_episode_details(episode_results, media_info):
-    episode_details = episode_results[media_info['episodeArrayNumber']]
-    media_info['title'] = episode_details['title']
-    media_info['episodeNumber'] = episode_details['episodeNumber']
-    media_info['overview'] = episode_details['overview']
-    media_info['episodeFileId'] = episode_details['episodeFileId']
-    media_info['episodeId'] = episode_details['id']
-    media_info['airDate'] = episode_details['airDate']
+        logger.info(f"Sonarr Root Folder: {sonarr_root_folder_path}")
+        logger.info(f"Sonarr Quality Profile ID: {sonarr_quality_profile_id}")
 
+        # Fetch Radarr configuration
+        radarr_headers = get_radarr_headers()
+        radarr_root_folders = await get_root_folders(radarr_base_url, radarr_headers)
+        radarr_quality_profiles = await get_quality_profiles(radarr_base_url, radarr_headers)
 
-media_info = {}
+        radarr_root_folder_path = select_root_folder(radarr_root_folders)
+        radarr_quality_profile_id = select_quality_profile(radarr_quality_profiles)
+
+        logger.info(f"Radarr Root Folder: {radarr_root_folder_path}")
+        logger.info(f"Radarr Quality Profile ID: {radarr_quality_profile_id}")
+
+    except Exception as e:
+        logger.error(f"Failed to initialize API configurations: {e}")
+        await bot.close()
+        return
+
+    # Sync slash commands
+    try:
+        synced = await bot.tree.sync()
+        logger.info(f"Synced {len(synced)} command(s)")
+    except Exception as e:
+        logger.error(f"Failed to sync commands: {e}")
+
+    logger.info('Bot is Up and Ready!')
 
 
 @bot.event
-async def on_ready():
-    logging.info('Bot is Up and Ready!')
-    try:
-        synced = await bot.tree.sync()
-        logging.info(f"Synced {len(synced)} command(s)")
-    except Exception as e:
-        logging.error(f"{e}")
+async def on_close():
+    """Clean up resources when bot shuts down."""
+    global http_session
+    if http_session and not http_session.closed:
+        await http_session.close()
+        logger.info("HTTP session closed")
 
 
+# ============================================================================
+# Slash Commands with Rate Limiting
+# ============================================================================
 @bot.tree.command(name=regrab_movie_command_name, description="Will delete and redownload selected movie")
 @app_commands.describe(movie="What movie should we regrab?")
-async def regrab_movie(ctx, *, movie: str):
-    movie_results = await fetch_movie(movie)
-    if not movie_results:
-        await ctx.response.send_message(
-            f"{ctx.user.name} no movie matching the following title was found: {movie}")
+@app_commands.checks.cooldown(1, 30.0, key=lambda i: i.user.id)  # 1 use per 30 seconds per user
+async def regrab_movie(interaction: discord.Interaction, *, movie: str):
+    """Command to regrab a movie."""
+    # Authorization check
+    if not check_authorization(interaction):
+        await interaction.response.send_message(
+            "You do not have permission to use this command.",
+            ephemeral=True
+        )
         return
-    media_info['what'] = 'movie'
-    media_info['delete'] = 'yes'
-    await ctx.response.send_message("Select a movie to regrab", view=MovieSelectorView(movie_results, media_info), ephemeral=True)
+
+    # Input validation
+    is_valid, result = validate_input(movie)
+    if not is_valid:
+        await interaction.response.send_message(result, ephemeral=True)
+        return
+
+    # Fetch movies
+    movie_results = await fetch_movie(result)
+
+    if not movie_results:
+        await interaction.response.send_message(
+            f"{interaction.user.name}, no movie matching the following title was found: {movie}",
+            ephemeral=True
+        )
+        return
+
+    # Create fresh media_info for this interaction (CRITICAL: per-interaction state)
+    media_info = {
+        'what': 'movie',
+        'delete': 'yes',
+        'user_id': interaction.user.id,
+        'user_name': interaction.user.name,
+    }
+
+    await interaction.response.send_message(
+        "Select a movie to regrab",
+        view=MovieSelectorView(movie_results, media_info),
+        ephemeral=True
+    )
 
 
 @bot.tree.command(name=regrab_episode_command_name, description="Will delete and redownload selected episode")
 @app_commands.describe(series="What TV series should we regrab from?")
-async def regrab_episode(ctx, *, series: str):
-    series_results = await fetch_series(series)
-    if not series_results:
-        await ctx.response.send_message(f"No TV series matching the title: {series}")
+@app_commands.checks.cooldown(1, 30.0, key=lambda i: i.user.id)  # 1 use per 30 seconds per user
+async def regrab_episode(interaction: discord.Interaction, *, series: str):
+    """Command to regrab a TV episode."""
+    # Authorization check
+    if not check_authorization(interaction):
+        await interaction.response.send_message(
+            "You do not have permission to use this command.",
+            ephemeral=True
+        )
         return
-    media_info['what'] = 'series'
-    media_info['delete'] = 'yes'
-    await ctx.response.send_message("Select a TV series to regrab", view=SeriesSelectorView(series_results, media_info), ephemeral=True)
+
+    # Input validation
+    is_valid, result = validate_input(series)
+    if not is_valid:
+        await interaction.response.send_message(result, ephemeral=True)
+        return
+
+    # Fetch series
+    series_results = await fetch_series(result)
+
+    if not series_results:
+        await interaction.response.send_message(
+            f"No TV series matching the title: {series}",
+            ephemeral=True
+        )
+        return
+
+    # Create fresh media_info for this interaction (CRITICAL: per-interaction state)
+    media_info = {
+        'what': 'series',
+        'delete': 'yes',
+        'user_id': interaction.user.id,
+        'user_name': interaction.user.name,
+    }
+
+    await interaction.response.send_message(
+        "Select a TV series to regrab",
+        view=SeriesSelectorView(series_results, media_info),
+        ephemeral=True
+    )
 
 
-bot.run(bot_token)
+# Error handler for cooldown
+@regrab_movie.error
+@regrab_episode.error
+async def on_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    """Handle command errors."""
+    if isinstance(error, app_commands.CommandOnCooldown):
+        await interaction.response.send_message(
+            f"This command is on cooldown. Try again in {error.retry_after:.1f} seconds.",
+            ephemeral=True
+        )
+    else:
+        logger.error(f"Command error: {error}")
+        await interaction.response.send_message(
+            "An error occurred while processing your request.",
+            ephemeral=True
+        )
+
+
+# ============================================================================
+# Main Entry Point
+# ============================================================================
+if __name__ == "__main__":
+    bot.run(bot_token)
