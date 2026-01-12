@@ -25,6 +25,9 @@ MAX_INPUT_LENGTH = 200
 VIEW_TIMEOUT = 300  # 5 minutes for UI interactions
 MAX_RETRIES = 3
 RETRY_DELAY = 1  # seconds
+STARTUP_RETRY_DELAY = 30  # seconds between startup retries
+STARTUP_MAX_RETRIES = 5  # max retries for initial service connection
+BACKGROUND_RETRY_INTERVAL = 60  # seconds between background retry attempts
 
 # ============================================================================
 # Logging Configuration
@@ -107,6 +110,11 @@ sonarr_root_folder_path: Optional[str] = None
 radarr_root_folder_path: Optional[str] = None
 sonarr_quality_profile_id: Optional[int] = None
 radarr_quality_profile_id: Optional[int] = None
+
+# Service availability tracking
+sonarr_available: bool = False
+radarr_available: bool = False
+config_retry_task: Optional[asyncio.Task] = None
 
 
 # ============================================================================
@@ -795,46 +803,132 @@ class EpisodeSelector(Select):
 
 
 # ============================================================================
+# Service Configuration Functions
+# ============================================================================
+async def initialize_sonarr_config() -> bool:
+    """
+    Initialize Sonarr configuration.
+    Returns True if successful, False otherwise.
+    """
+    global sonarr_root_folder_path, sonarr_quality_profile_id, sonarr_available
+
+    try:
+        sonarr_headers = get_sonarr_headers()
+        sonarr_root_folders = await get_root_folders(sonarr_base_url, sonarr_headers)
+        sonarr_quality_profiles = await get_quality_profiles(sonarr_base_url, sonarr_headers)
+
+        if not sonarr_root_folders:
+            logger.warning("Sonarr: No root folders available")
+            return False
+
+        if not sonarr_quality_profiles:
+            logger.warning("Sonarr: No quality profiles available")
+            return False
+
+        sonarr_root_folder_path = sonarr_root_folders[0]['path']
+        sonarr_quality_profile_id = sonarr_quality_profiles[0]['id']
+        sonarr_available = True
+
+        logger.info(f"Sonarr connected - Root Folder: {sonarr_root_folder_path}, Quality Profile ID: {sonarr_quality_profile_id}")
+        return True
+
+    except Exception as e:
+        logger.warning(f"Sonarr initialization failed: {e}")
+        sonarr_available = False
+        return False
+
+
+async def initialize_radarr_config() -> bool:
+    """
+    Initialize Radarr configuration.
+    Returns True if successful, False otherwise.
+    """
+    global radarr_root_folder_path, radarr_quality_profile_id, radarr_available
+
+    try:
+        radarr_headers = get_radarr_headers()
+        radarr_root_folders = await get_root_folders(radarr_base_url, radarr_headers)
+        radarr_quality_profiles = await get_quality_profiles(radarr_base_url, radarr_headers)
+
+        if not radarr_root_folders:
+            logger.warning("Radarr: No root folders available")
+            return False
+
+        if not radarr_quality_profiles:
+            logger.warning("Radarr: No quality profiles available")
+            return False
+
+        radarr_root_folder_path = radarr_root_folders[0]['path']
+        radarr_quality_profile_id = radarr_quality_profiles[0]['id']
+        radarr_available = True
+
+        logger.info(f"Radarr connected - Root Folder: {radarr_root_folder_path}, Quality Profile ID: {radarr_quality_profile_id}")
+        return True
+
+    except Exception as e:
+        logger.warning(f"Radarr initialization failed: {e}")
+        radarr_available = False
+        return False
+
+
+async def retry_unavailable_services():
+    """
+    Background task to retry connecting to unavailable services.
+    Runs periodically until all services are available.
+    """
+    global sonarr_available, radarr_available
+
+    while True:
+        await asyncio.sleep(BACKGROUND_RETRY_INTERVAL)
+
+        # Check if all services are available
+        if sonarr_available and radarr_available:
+            logger.info("All services available, stopping retry task")
+            break
+
+        # Retry unavailable services
+        if not sonarr_available:
+            logger.info("Retrying Sonarr connection...")
+            await initialize_sonarr_config()
+
+        if not radarr_available:
+            logger.info("Retrying Radarr connection...")
+            await initialize_radarr_config()
+
+
+# ============================================================================
 # Bot Events
 # ============================================================================
 @bot.event
 async def on_ready():
     """Initialize bot and fetch configuration from Sonarr/Radarr."""
-    global http_session, sonarr_root_folder_path, radarr_root_folder_path
-    global sonarr_quality_profile_id, radarr_quality_profile_id
+    global http_session, config_retry_task
 
     logger.info('Bot is starting up...')
 
-    # Initialize HTTP session
-    http_session = aiohttp.ClientSession()
+    # Initialize HTTP session if not already done
+    if http_session is None or http_session.closed:
+        http_session = aiohttp.ClientSession()
 
-    try:
-        # Fetch Sonarr configuration
-        sonarr_headers = get_sonarr_headers()
-        sonarr_root_folders = await get_root_folders(sonarr_base_url, sonarr_headers)
-        sonarr_quality_profiles = await get_quality_profiles(sonarr_base_url, sonarr_headers)
+    # Try to initialize services (don't crash if they fail)
+    sonarr_ok = await initialize_sonarr_config()
+    radarr_ok = await initialize_radarr_config()
 
-        sonarr_root_folder_path = select_root_folder(sonarr_root_folders)
-        sonarr_quality_profile_id = select_quality_profile(sonarr_quality_profiles)
+    # Log status
+    if sonarr_ok and radarr_ok:
+        logger.info("All services initialized successfully")
+    else:
+        services_down = []
+        if not sonarr_ok:
+            services_down.append("Sonarr")
+        if not radarr_ok:
+            services_down.append("Radarr")
+        logger.warning(f"Some services unavailable: {', '.join(services_down)}. Commands for these services will be disabled until they reconnect.")
 
-        logger.info(f"Sonarr Root Folder: {sonarr_root_folder_path}")
-        logger.info(f"Sonarr Quality Profile ID: {sonarr_quality_profile_id}")
-
-        # Fetch Radarr configuration
-        radarr_headers = get_radarr_headers()
-        radarr_root_folders = await get_root_folders(radarr_base_url, radarr_headers)
-        radarr_quality_profiles = await get_quality_profiles(radarr_base_url, radarr_headers)
-
-        radarr_root_folder_path = select_root_folder(radarr_root_folders)
-        radarr_quality_profile_id = select_quality_profile(radarr_quality_profiles)
-
-        logger.info(f"Radarr Root Folder: {radarr_root_folder_path}")
-        logger.info(f"Radarr Quality Profile ID: {radarr_quality_profile_id}")
-
-    except Exception as e:
-        logger.error(f"Failed to initialize API configurations: {e}")
-        await bot.close()
-        return
+        # Start background retry task if not already running
+        if config_retry_task is None or config_retry_task.done():
+            config_retry_task = asyncio.create_task(retry_unavailable_services())
+            logger.info("Started background service retry task")
 
     # Sync slash commands
     try:
@@ -849,7 +943,18 @@ async def on_ready():
 @bot.event
 async def on_close():
     """Clean up resources when bot shuts down."""
-    global http_session
+    global http_session, config_retry_task
+
+    # Cancel retry task if running
+    if config_retry_task and not config_retry_task.done():
+        config_retry_task.cancel()
+        try:
+            await config_retry_task
+        except asyncio.CancelledError:
+            pass
+        logger.info("Background retry task cancelled")
+
+    # Close HTTP session
     if http_session and not http_session.closed:
         await http_session.close()
         logger.info("HTTP session closed")
@@ -863,6 +968,14 @@ async def on_close():
 @app_commands.checks.cooldown(1, 30.0, key=lambda i: i.user.id)  # 1 use per 30 seconds per user
 async def regrab_movie(interaction: discord.Interaction, *, movie: str):
     """Command to regrab a movie."""
+    # Service availability check
+    if not radarr_available:
+        await interaction.response.send_message(
+            "Radarr is currently unavailable. Please try again later.",
+            ephemeral=True
+        )
+        return
+
     # Authorization check
     if not check_authorization(interaction):
         await interaction.response.send_message(
@@ -907,6 +1020,14 @@ async def regrab_movie(interaction: discord.Interaction, *, movie: str):
 @app_commands.checks.cooldown(1, 30.0, key=lambda i: i.user.id)  # 1 use per 30 seconds per user
 async def regrab_episode(interaction: discord.Interaction, *, series: str):
     """Command to regrab a TV episode."""
+    # Service availability check
+    if not sonarr_available:
+        await interaction.response.send_message(
+            "Sonarr is currently unavailable. Please try again later.",
+            ephemeral=True
+        )
+        return
+
     # Authorization check
     if not check_authorization(interaction):
         await interaction.response.send_message(
